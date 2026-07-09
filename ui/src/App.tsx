@@ -207,7 +207,9 @@ export default function App() {
             <div className="grid2" style={{ marginTop: 18 }}>
               <div className="card pad">
                 <h3 style={{ marginBottom: 10 }}>Answer <span className="muted" style={{ fontWeight: 400 }}>· {r.chosen_model}</span></h3>
-                <p style={{ fontSize: 13.5, lineHeight: 1.6, whiteSpace: "pre-wrap", margin: 0 }}>{answer}</p>
+                <div className="scrollbox">
+                  <p style={{ fontSize: 13.5, lineHeight: 1.6, whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0 }}>{answer}</p>
+                </div>
               </div>
               <div className="card pad">
                 <h3 style={{ marginBottom: 10 }}>Signed receipt <span className="muted" style={{ fontWeight: 400 }}>· /trace/{r.task_id.slice(0, 8)}</span></h3>
