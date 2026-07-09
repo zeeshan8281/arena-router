@@ -4,11 +4,13 @@ import { loadWorkerConfig, workerConfig } from "./config.js";
 import { infer } from "./backend.js";
 import type { ChatBody } from "../router/signals.js";
 import type { WorkerAttestation, WorkerResponse } from "../attestation.js";
+import { cors } from "../cors.js";
 
 const cfg = loadWorkerConfig();
 const wallet = walletFromPhrase(process.env.MNEMONIC!);
 
 const app = express();
+app.use(cors);
 app.use(
   express.json({
     limit: "1mb",

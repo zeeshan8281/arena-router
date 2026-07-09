@@ -5,11 +5,13 @@ import { chat } from "./routes/chat.js";
 import { trace } from "./routes/trace.js";
 import { recipe } from "./routes/recipe.js";
 import { health } from "./routes/health.js";
+import { cors } from "./cors.js";
 
 initSigner();
 const cfg = loadConfig();
 
 const app = express();
+app.use(cors);
 // Capture the exact raw body so input_hash is over what the client actually sent.
 app.use(
   express.json({

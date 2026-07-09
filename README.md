@@ -141,9 +141,17 @@ console.log("tampered->", bad.toLowerCase()!==d.signer_address.toLowerCase() ? "
 > **Note:** an app's public IP can change on restart. Re-resolve with
 > `ecloud compute app info 0x7F2EC821fbD68e8A20C7C01a9498b6C70bC9c896` (look at the IP line), or read it off the dashboard.
 
+## Visual UI
+
+A brand-aligned (Eigen design system) front-end lives in [`ui/`](./ui). It routes a live prompt through the TEE conductor, visualizes the pipeline (signals → policy → conductor signature → worker attestations), and then **recovers every enclave signer in your browser** with `ethers.verifyMessage` — plus a tamper toggle that breaks a signature in one click. The verification is byte-identical to the standalone verifier; the UI is just a window onto it, not a trusted party.
+
+```bash
+cd ui && npm install && npm run dev      # http://localhost:5173
+```
+
 ## Endpoints
 
-**Conductor** — `POST /v1/route` (main) · `GET /trace/:id` · `GET /trace` · `GET /recipe` · `GET /pubkey` · `GET /health`
+**Conductor** — `POST /v1/route` (main) · `GET /trace/:id` · `GET /trace` · `GET /recipe` · `GET /pubkey` · `GET /health` (all send permissive CORS — public verifiability)
 **Worker** — `POST /infer` (returns a signed attestation) · `GET /pubkey` · `GET /health`
 
 `POST /v1/route` is OpenAI-compatible-ish: `{ "messages": [{ "role": "user", "content": "…" }], "max_tokens": 512 }`.
