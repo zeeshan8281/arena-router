@@ -2,7 +2,15 @@
 
 **A semantic LLM router you don't have to trust.** It runs inside Intel TDX enclaves on [EigenCompute](https://www.eigencloud.xyz/), and it *cryptographically signs a receipt for every routing decision and every model inference* — so anyone can verify **which model was chosen, under which policy, and that that exact model produced the output**, without trusting the operator (that includes me).
 
-> Live on EigenCompute Sepolia right now. Skip to [**Verify it yourself**](#verify-it-yourself) — you can check a real signed receipt from your terminal in about 60 seconds.
+### 🔗 Live on EigenCompute (Sepolia)
+
+| | Link |
+|---|---|
+| 🖥️ **Live demo (UI)** | **http://34.6.165.194:8080** |
+| 🧭 **Conductor** — routing decision, signs the receipt | [verify-sepolia.eigencloud.xyz →](https://verify-sepolia.eigencloud.xyz/app/0x7F2EC821fbD68e8A20C7C01a9498b6C70bC9c896) |
+| 🔒 **Prover (worker)** — runs the model, signs the inference | [verify-sepolia.eigencloud.xyz →](https://verify-sepolia.eigencloud.xyz/app/0xdb06a76f914513519217DCb4c7c6E1160238f600) |
+
+> Skip to [**Verify it yourself**](#verify-it-yourself) — you can check a real signed receipt from your terminal in about 60 seconds.
 
 ---
 
