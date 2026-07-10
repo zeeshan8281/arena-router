@@ -1,62 +1,69 @@
 ---
 name: autorouter
-description: Iterate on an AutoRouter Arena routing policy locally — scaffold policy.ts, score it against the public dev set, improve the score (quality per cost, promote open/free models), validate, and submit. Use when the user is working on an autorouter competition policy, mentions "arena", "routing policy", "decide()", or wants to test a router before submitting.
+description: "Use when helping a participant compete in the AutoRouter Arena via the autorouter CLI: login, config, benchmark, clone, setup, run (local score on the public dev set), submit (attested grading on the hidden set → signed score), submissions, leaderboard, verify. Also use when the user is writing a routing policy (decide()), mentions the arena, or wants to test a router before submitting."
 ---
 
-# AutoRouter Arena — local iteration
+# AutoRouter Arena — CLI usage
 
-You help a participant build a routing **policy** for the AutoRouter Arena. They submit one file, `policy.ts`, exporting `decide(prompt, models)`. You iterate it locally against the public dev set; the real competition grades the same way inside a TEE. Read `arena/COMPETITION.md` for the full rules before giving strategy advice.
+Operate the `autorouter` CLI to compete in the AutoRouter Arena. The participant writes one file — `policy.ts`, exporting `decide(prompt, models)` — iterates it locally, then submits for an **attested** score signed by the grader enclave. Read `arena/COMPETITION.md` for full rules before giving strategy advice.
 
-## The objective (keep this in mind for every suggestion)
+## The objective (hold this in mind for every suggestion)
 
 ```
 score = mean(quality) − λ·mean(cost) + β·oss_rate
 ```
 
-Free/open models cost 0 **and** earn the openness bonus. So the winning move is: route to a **free open-source** model whenever it's good enough, and only escalate to a paid/proprietary model when the quality gain outweighs `λ·price`. Never blindly send everything to the strongest model — that tanks cost and oss_rate.
+Free/open models cost 0 **and** earn the openness bonus. Winning move: route to a **free open-source** model whenever it's good enough; only escalate to a paid/proprietary model when the quality gain beats `λ·price`. Never blindly send everything to the strongest model — it tanks cost and oss_rate.
 
-## Workflow
+## Setup
 
-### 1. Scaffold
-If `arena/policy.ts` doesn't exist, copy the template:
 ```bash
-cp arena/policy.template.ts arena/policy.ts
+autorouter login <handle> --api <grader-url>   # identity + grader endpoint
+autorouter config                              # show resolved api + handle
+autorouter benchmark                           # models, params (λ, β, threshold), hidden-set hash
 ```
 
-### 2. Run the scorer (this is the core loop)
+## Get a workspace and iterate
+
 ```bash
-node --import tsx arena/run.mjs arena/policy.ts
+autorouter clone [dir]        # scaffolds policy.ts (+ types, dev set, scorer) into dir
+autorouter setup              # installs tsx (local scorer needs it)
+# edit policy.ts ...
+autorouter run [policy.ts]    # score locally on the PUBLIC dev set — the core loop
 ```
-It prints a per-prompt table (looper, chosen model, #calls, quality, cost, oss) and the final SCORE with its three components. Requires `tsx` (`npm i -D tsx` if missing).
 
-### 3. Read the breakdown and improve
-Look at the table for waste:
-- **A cheap prompt routed to a paid model** → move it to a free model (saves cost, gains oss).
-- **A hard prompt stuck on a free model with low quality** → escalate (confidence looper with a strong model appended), but only if the quality gain beats the cost penalty.
-- **`confidence` never escalating / always escalating** → tune which models you list and their order; escalation cost is paid only when it fires.
-- **Using `ratings`/`remom`** → they call multiple models (high cost); only justify them on the hardest prompts.
-Then re-run step 2. Chase a higher SCORE, not just higher quality.
+`run` prints a per-prompt table (looper, chosen model, #calls, quality, cost, oss) and the SCORE. Read it for waste:
+- cheap prompt → paid model? move it to a free model.
+- hard prompt stuck on a free model with low quality? escalate (confidence looper with a strong model appended), but only if the quality gain beats the cost.
+- using `ratings`/`remom`? they call multiple models — only justify on the hardest prompts.
+Re-run. Chase a higher SCORE, not just higher quality.
 
-### 4. Validate before submitting
-Re-run the scorer and confirm: no `INVALID` rows (every returned candidate is a real catalog id), and `decide()` stays pure — **no** `fetch`, `fs`, `import` beyond `./types`, `Date`, `Math.random`, or `process`. The grader's sandbox rejects those; the score is only reproducible if the policy is deterministic.
+## Submit (attested)
 
-### 5. Submit
 ```bash
-autorouter submit arena/policy.ts        # (organizer CLI — endpoint per the competition)
+autorouter submit [policy.ts] --note "what I changed"
 ```
-The grader runs the policy against the hidden set inside the enclave and returns a **signed** ScoreReceipt (verifiable against the grader's on-chain Derived Address). Until the organizer's submit endpoint is configured, submission is out of band — check the competition page.
 
-## Strategy notes to offer
+The grader runs your policy against the **hidden** set inside a TEE and returns a **signed** score; the CLI verifies the signature against the grader's enclave address before printing it. Then:
 
-- The dev set has ~3 genuinely hard prompts (math/proof/algorithm) where free models are weak — those are the only ones usually worth escalating.
-- `has_code` or `complexity_band === "high"` are good escalation triggers; low/med rarely are.
-- Prefer the cheapest **open-free** model that clears the bar; the openness bonus (`β`) is free score.
-- Don't overfit the dev numbers — the hidden set differs. Aim for a robust rule (signals → looper + candidates), not per-prompt hacks (you can't see the hidden prompts anyway).
+```bash
+autorouter submissions               # your scores
+autorouter leaderboard               # best score per participant
+autorouter verify <submission_id>    # re-check any submission's enclave signature
+```
 
-## Files
-- `arena/policy.template.ts` — starter, copy to `policy.ts`
-- `arena/types.ts` — the exact interface (`PromptView`, `ModelCard`, `Decision`)
-- `arena/config/catalog.json` — models, prices, scoring params (`λ`, `β`, threshold)
-- `arena/dev/devset.json` — public dev prompts with precomputed per-model outcomes
-- `arena/run.mjs` — the local scorer (faithful reference of the grader's math)
-- `arena/COMPETITION.md` — full rules, scoring, attestation
+## What counts as a good policy
+
+The hidden set is different from the dev set — write a **general rule** (signals → looper + candidates), not per-prompt hacks (you can't see the hidden prompts anyway). The graded score is signed by the enclave and recomputable after the set is revealed, so there's nothing to game. Local `run` and the grader use identical math, so a higher local score is a faithful (not exact) predictor.
+
+## Rules the grader sandbox enforces
+`decide()` must be **pure** — no `fetch`, `fs`, `import` beyond `./types`, `Date`, `Math.random`, or `process`. It runs under SES capability isolation in a worker thread with a CPU timeout; violations either do nothing (globals are undefined) or get the submission killed.
+
+## Files (in a cloned workspace / `arena/`)
+- `policy.ts` — your submission (from `policy.template.ts`)
+- `types.ts` — the `decide()` interface
+- `config/catalog.json` — models, prices, scoring params
+- `dev/devset.json` — public dev prompts with precomputed outcomes
+- `run.mjs` / `score.mjs` — the local scorer (mirrors the grader)
+- `cli/autorouter.mjs` — the CLI
+- `COMPETITION.md` — full rules, scoring, attestation, integrity

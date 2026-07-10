@@ -2,8 +2,13 @@
 // selected by env (ROLE_PUBLIC), not a per-app CMD override.
 export {}; // make this a module so top-level await is allowed
 
-if ((process.env.ROLE_PUBLIC ?? "conductor") === "worker") {
-  await import("./worker/index.js");
-} else {
-  await import("./index.js");
+switch (process.env.ROLE_PUBLIC ?? "conductor") {
+  case "worker":
+    await import("./worker/index.js");
+    break;
+  case "grader":
+    await import("./grader/index.js");
+    break;
+  default:
+    await import("./index.js");
 }

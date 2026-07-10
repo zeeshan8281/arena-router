@@ -1,0 +1,17 @@
+{
+  "name": "autorouter-arena",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "AutoRouter Arena — participant kit + CLI (local scorer, attested submit).",
+  "bin": { "autorouter": "cli/autorouter.mjs" },
+  "scripts": {
+    "score": "node --import tsx run.mjs policy.ts"
+  },
+  "dependencies": {
+    "ethers": "6.13.4"
+  },
+  "devDependencies": {
+    "tsx": "4.19.2"
+  }
+}

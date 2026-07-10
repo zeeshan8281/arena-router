@@ -2,26 +2,31 @@
 
 Build the best **LLM routing policy**. You write one function; an attested grader on EigenCompute scores it against a hidden prompt set and signs the result, so the leaderboard can't be faked. Full rules: **[COMPETITION.md](./COMPETITION.md)**.
 
-## Quickstart
+## Quickstart (CLI)
 
 ```bash
-npm i -D tsx                       # once (if not already installed)
-cp arena/policy.template.ts arena/policy.ts
-# edit arena/policy.ts ...
-node --import tsx arena/run.mjs arena/policy.ts
+npm i -g ./arena            # installs the `autorouter` CLI  (or: node arena/cli/autorouter.mjs <cmd>)
+
+autorouter login <handle> --api <grader-url>
+autorouter benchmark        # see models, scoring params, hidden-set hash
+autorouter clone my-router  # scaffold a policy workspace
+cd my-router
+autorouter setup            # installs tsx
+# edit policy.ts ...
+autorouter run              # score locally on the PUBLIC dev set
+autorouter submit --note "baseline"   # grade on the HIDDEN set inside the TEE → signed score
+autorouter leaderboard
 ```
 
-You'll get a per-prompt table and a SCORE. Improve the score, repeat.
+Onboarding mirrors [FrontierCS](https://openfrontiercs.com): `login → clone → setup → run → submit`. The difference: `submit` returns a **cryptographically signed** score (verifiable against the grader's on-chain enclave address), not a trust-the-organizer number.
 
 ## Let Claude iterate with you
-
-Install the skill, then just ask Claude to improve your policy:
 
 ```bash
 cp -r arena/skill/autorouter ~/.claude/skills/autorouter
 ```
 
-Claude will scaffold `policy.ts`, run the scorer, read the breakdown, and suggest routing changes aimed at the objective — *quality per cost, leaning on free/open models*.
+Then ask Claude to improve your policy — it drives the CLI (`run`/`submit`), reads the per-prompt breakdown, and suggests routing changes aimed at the objective: *quality per cost, leaning on free/open models*.
 
 ## The one rule to internalize
 
@@ -35,10 +40,13 @@ Free open-source models cost nothing and earn the openness bonus. Route to them 
 
 | file | what |
 |---|---|
-| `policy.template.ts` | starter policy — copy to `policy.ts` |
+| `cli/autorouter.mjs` | the CLI (`login/benchmark/clone/run/submit/leaderboard/verify`) |
+| `policy.template.ts` | starter policy — `clone` copies it to `policy.ts` |
 | `types.ts` | the interface your `decide()` implements |
 | `config/catalog.json` | models, prices, scoring params |
 | `dev/devset.json` | public dev prompts + precomputed per-model outcomes |
-| `run.mjs` | local scorer (mirrors the grader's math exactly) |
-| `skill/autorouter/` | Claude Code skill for guided iteration |
+| `run.mjs` / `score.mjs` | local scorer (mirrors the grader's math exactly) |
+| `skill/autorouter/` | Claude Code skill that drives the CLI |
 | `COMPETITION.md` | full spec: scoring, loopers, attestation, integrity |
+
+> The grader (`src/grader/`) runs on EigenCompute: it sandboxes your policy with **SES** in a worker thread, scores it on the sealed hidden set, and signs the `ScoreReceipt` with its enclave key.
