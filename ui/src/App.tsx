@@ -4,19 +4,29 @@ import {
   type Benchmark, type LeaderRow, type SubmitResult,
 } from "./arena";
 
-// On Vercel, /api proxies to the grader (see vercel.json). Locally, hit it directly.
-const API = import.meta.env.VITE_API_BASE || "http://34.136.240.56:8080";
+// Reads (benchmark/leaderboard) → grader (via /grader proxy on Vercel, direct locally).
+const GRADER = import.meta.env.VITE_GRADER_BASE || "http://34.136.240.56:8080";
+const ON_VERCEL = Boolean(import.meta.env.VITE_GRADER_BASE);
 const REPO = "https://github.com/zeeshan8281/arena-router";
 const GRADER_DASH = "https://verify-sepolia.eigencloud.xyz/app/0xa2b59f7988Dc1611d5df3F1FcDf3080daa50d2De";
+
+type Session = { login: string | null; configured: boolean } | "local" | "loading";
 
 export default function App() {
   const [bench, setBench] = useState<Benchmark | null>(null);
   const [board, setBoard] = useState<LeaderRow[]>([]);
-  const loadBoard = () => fetch(`${API}/leaderboard`).then((r) => r.json()).then((d) => setBoard(d.leaderboard || [])).catch(() => {});
-  useEffect(() => { fetch(`${API}/benchmark`).then((r) => r.json()).then(setBench).catch(() => {}); loadBoard(); }, []);
+  const [me, setMe] = useState<Session>("loading");
+
+  const loadBoard = () => fetch(`${GRADER}/leaderboard`).then((r) => r.json()).then((d) => setBoard(d.leaderboard || [])).catch(() => {});
+  useEffect(() => {
+    fetch(`${GRADER}/benchmark`).then((r) => r.json()).then(setBench).catch(() => {});
+    loadBoard();
+    fetch("/api/me").then((r) => { if (!r.ok) throw 0; return r.json(); }).then(setMe).catch(() => setMe("local"));
+  }, []);
 
   const p = bench?.scoring_params;
   const go = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
+  const signedIn = me !== "loading" && me !== "local" && me.login;
 
   return (
     <>
@@ -29,24 +39,22 @@ export default function App() {
           </div>
           <div className="spacer" />
           <nav className="nav">
-            <span className="navlink" onClick={() => go("grading")}>How grading works</span>
+            <span className="navlink" onClick={() => go("grading")}>How it works</span>
             <span className="navlink" onClick={() => go("participate")}>Participate</span>
             <span className="navlink" onClick={() => go("leaderboard")}>Score history</span>
-            <a className="navlink" href={REPO} target="_blank" rel="noreferrer">GitHub ↗</a>
           </nav>
+          <AuthPill me={me} />
         </div>
       </header>
 
       <main className="wrap">
-        {/* hero */}
         <section style={{ paddingTop: 64, borderTop: "none" }}>
           <div className="eyebrow">Attested routing benchmark · Intel TDX on EigenCompute</div>
-          <h1 className="hero-h">AutoRouter Arena</h1>
+          <h1 className="hero-h">Can your router<br />beat the frontier?</h1>
           <p className="lede" style={{ marginTop: 18 }}>
-            Build the best LLM routing policy. You submit one function; an attested grader scores it on a
+            Write one function — <span className="mono">decide()</span>. An attested grader runs it against a
             <b style={{ color: "var(--foreground)" }}> hidden</b> prompt set inside a TEE and
-            <b style={{ color: "var(--foreground)" }}> signs</b> the result — so the leaderboard is verifiable and no one,
-            not even the organizer, can fake a number.
+            <b style={{ color: "var(--foreground)" }}> signs</b> your score. Highest quality per dollar, leaning on open models, wins — and every number on the board is cryptographically verifiable.
           </p>
           <div style={{ display: "flex", gap: 10, marginTop: 24, flexWrap: "wrap" }}>
             <button className="btn indigo" onClick={() => go("participate")}>Participate →</button>
@@ -59,13 +67,12 @@ export default function App() {
           </div>
         </section>
 
-        {/* the benchmark */}
         <section id="benchmark">
           <div className="eyebrow">The benchmark</div>
           <h2>Route smart, spend little, prefer open models</h2>
           <p className="lede" style={{ marginTop: 12 }}>
-            You write <span className="mono">decide(prompt, models)</span> — pick which model handles each request and how
-            (single, confidence-escalate, ratings, remom). The grader runs it over {bench?.n_prompts ?? "N"} hidden prompts and scores:
+            You pick which model handles each request and how (single, confidence-escalate, ratings, remom).
+            The grader runs it over {bench?.n_prompts ?? "N"} hidden prompts and scores:
           </p>
           <div className="term" style={{ margin: "16px 0", maxWidth: 520 }}>score = mean(quality) − λ·mean(cost) + β·oss_rate</div>
           {p && (
@@ -93,7 +100,6 @@ export default function App() {
           )}
         </section>
 
-        {/* how grading works */}
         <section id="grading">
           <div className="eyebrow">How grading works</div>
           <h2>Sandboxed, hidden, and signed</h2>
@@ -102,7 +108,7 @@ export default function App() {
               ["Sandbox", "Your decide() runs under SES capability isolation in a worker thread inside the grader enclave — no fetch / fs / process, so it can't read or leak the hidden prompts, and a hang is killed by a timeout."],
               ["Hidden set", "The prompts are sealed (KMS-encrypted, decrypt only in the enclave). You never see them, so you can't overfit — write a general rule, not per-prompt hacks."],
               ["Attested score", "The grader signs { policy_hash, eval_set_hash, results_root, score } with a KMS-derived key that only exists inside the measured image. Recover the signer with ethers.verifyMessage — it matches the grader's on-chain Derived Address."],
-              ["Auditable", "After the round the hidden set is revealed and eval_set_hash checked, so any score can be recomputed and audited end-to-end. Nothing to trust, everything to verify."],
+              ["Verified identity", "Web submissions are gated behind Sign in with GitHub — your score is tied to your verified GitHub login, so nobody can claim the board as you."],
             ].map(([t, d], i) => (
               <div className="step" key={i}>
                 <span className="num">{i + 1}</span>
@@ -112,32 +118,23 @@ export default function App() {
           </div>
         </section>
 
-        {/* participate */}
         <section id="participate">
           <div className="eyebrow">Participate</div>
-          <h2>Compete from the CLI</h2>
+          <h2>Compete from the CLI, or the browser</h2>
           <p className="lede" style={{ marginTop: 12 }}>Iterate locally against a public dev set (instant, offline), then submit for an attested score on the hidden set.</p>
           <div className="term" style={{ marginTop: 16 }}>
             <div><span className="p"># install</span></div>
             <div><span className="p">$</span> <span className="c">git clone {REPO} && cd arena-router && npm i -g ./arena</span></div>
             <div style={{ height: 10 }} />
-            <div><span className="p"># onboard</span></div>
+            <div><span className="p"># onboard, iterate, submit</span></div>
             <div><span className="p">$</span> <span className="c">autorouter login &lt;handle&gt;</span></div>
-            <div><span className="p">$</span> <span className="c">autorouter benchmark</span>  <span className="o"># models, params, hidden-set hash</span></div>
             <div><span className="p">$</span> <span className="c">autorouter clone my-router && cd my-router</span></div>
-            <div style={{ height: 10 }} />
-            <div><span className="p"># iterate, then submit</span></div>
             <div><span className="p">$</span> <span className="c">autorouter run</span>  <span className="o"># score locally on the public dev set</span></div>
             <div><span className="p">$</span> <span className="c">autorouter submit --note "v1"</span>  <span className="o"># attested score on the hidden set</span></div>
-            <div><span className="p">$</span> <span className="c">autorouter leaderboard</span></div>
           </div>
-          <p className="muted" style={{ fontSize: 13, marginTop: 12 }}>
-            Prefer an AI pair? Load the skill — <span className="mono">cp -r arena/skill/autorouter ~/.claude/skills/</span> — and Claude drives the loop with you.
-          </p>
-          <QuickTry />
+          <QuickTry me={me} onDone={loadBoard} />
         </section>
 
-        {/* leaderboard */}
         <section id="leaderboard">
           <div className="eyebrow">Score history</div>
           <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
@@ -165,40 +162,79 @@ export default function App() {
   );
 }
 
-// Optional: submit straight from the browser (no install). Collapsed by default.
-function QuickTry() {
+function AuthPill({ me }: { me: Session }) {
+  if (me === "loading") return null;
+  if (me === "local") return <span className="pill">local dev</span>;
+  if (me.login) return (
+    <span className="pill" style={{ gap: 8 }}>@{me.login}
+      <a className="navlink" style={{ fontSize: 12 }} href="/api/logout">sign out</a>
+    </span>
+  );
+  if (me.configured) return <a className="btn indigo sm" href="/api/auth/login">Sign in with GitHub</a>;
+  return <span className="pill">sign-in not configured</span>;
+}
+
+// Submit from the browser. Signed-in GitHub users submit as their verified login
+// (via /api/submit). Locally / when OAuth isn't configured, fall back to a handle.
+function QuickTry({ me, onDone }: { me: Session; onDone: () => void }) {
   const [open, setOpen] = useState(false);
   const [handle, setHandle] = useState("");
+  const [model, setModel] = useState("");
   const [policy, setPolicy] = useState(DEFAULT_POLICY);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [res, setRes] = useState<(SubmitResult & { verified: boolean; recovered: string }) | null>(null);
 
+  const gated = me !== "loading" && me !== "local" && me.configured; // GitHub sign-in enforced
+  const login = me !== "loading" && me !== "local" ? me.login : null;
+
   const submit = async () => {
-    if (!handle.trim()) { setErr("pick a handle"); return; }
-    setBusy(true); setErr(""); setRes(null);
+    setErr(""); setRes(null);
+    if (gated && !login) { setErr("sign in with GitHub first"); return; }
+    if (!gated && !handle.trim()) { setErr("enter a handle"); return; }
+    setBusy(true);
     try {
-      const r = await fetch(`${API}/submit`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ policy, participant: handle.trim(), note: "browser" }) });
+      const url = gated ? "/api/submit" : `${GRADER}/submit`;
+      const payload = gated
+        ? { policy, note: model ? `model: ${model}` : "" }
+        : { policy, participant: handle.trim(), note: model ? `model: ${model}` : "browser" };
+      const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
       const d: SubmitResult = await r.json();
       if (!r.ok || d.error) throw new Error(d.error || `grader ${r.status}`);
-      const { ok, recovered } = verifyReceipt(d.receipt, d.signature, d.grader_address);
-      setRes({ ...d, verified: ok, recovered });
+      const v = verifyReceipt(d.receipt, d.signature, d.grader_address);
+      setRes({ ...d, verified: v.ok, recovered: v.recovered });
+      onDone();
     } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   };
 
-  if (!open) return <button className="btn outline sm" style={{ marginTop: 14 }} onClick={() => setOpen(true)}>No install? Try in the browser →</button>;
+  if (!open) return <button className="btn outline sm" style={{ marginTop: 14 }} onClick={() => setOpen(true)}>Submit from the browser →</button>;
+
   return (
     <div className="card pad" style={{ marginTop: 16 }}>
       <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
-        <h3>Quick try — submit from the browser</h3><span className="spacer" />
+        <h3>Submit a policy</h3><span className="spacer" />
         <button className="btn outline sm" onClick={() => setOpen(false)}>close</button>
       </div>
-      <input className="input" style={{ marginBottom: 8, borderColor: handle.trim() ? undefined : "var(--destructive)" }} placeholder="your handle (required)" value={handle} onChange={(e) => setHandle(e.target.value)} />
+
+      {gated && !login && (
+        <div className="banner" style={{ border: "1px solid var(--border)", marginBottom: 12 }}>
+          <div>Web submissions require a verified identity. <a className="btn indigo sm" href="/api/auth/login" style={{ marginLeft: 8 }}>Sign in with GitHub</a></div>
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+        {gated
+          ? login && <span className="pill">submitting as @{login}</span>
+          : <input className="input" style={{ flex: 1, minWidth: 140, borderColor: handle.trim() ? undefined : "var(--destructive)" }} placeholder="handle (required)" value={handle} onChange={(e) => setHandle(e.target.value)} />}
+        <input className="input" style={{ flex: 1, minWidth: 160 }} placeholder="AI model you used (e.g. Claude Opus 4.8)" value={model} onChange={(e) => setModel(e.target.value)} />
+      </div>
+
       <textarea className="textarea mono" style={{ minHeight: 200, fontSize: 12 }} value={policy} onChange={(e) => setPolicy(e.target.value)} spellCheck={false} />
       <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center" }}>
-        <button className="btn indigo" onClick={submit} disabled={busy || !handle.trim()}>{busy ? "Grading in the TEE…" : "Submit → attested score"}</button>
+        <button className="btn indigo" onClick={submit} disabled={busy || (gated && !login) || (!gated && !handle.trim())}>
+          {busy ? "Grading in the TEE…" : "Submit → attested score"}
+        </button>
         <button className="btn outline sm" onClick={() => setPolicy(DEFAULT_POLICY)}>reset</button>
-        {!handle.trim() && <span className="muted" style={{ fontSize: 12 }}>← enter a handle to submit</span>}
       </div>
       {err && <p className="mono" style={{ color: "var(--destructive)", fontSize: 12, marginTop: 8 }}>error: {err}</p>}
       {res && (
