@@ -11,7 +11,8 @@ Two things live in this repo, sharing one trust primitive (signed receipts):
 
 | | Link |
 |---|---|
-| 🖥️ **Router UI** (visualizes + verifies the chain in your browser) | **https://arena-router-ui.vercel.app** · or http://34.6.165.194:8080 · local: `cd ui && npm i && npm run dev` |
+| 🏆 **Arena UI** (submit a policy → attested signed score, live leaderboard) | **https://arena-router-ui.vercel.app** |
+| 🖥️ **Router chain UI** (visualizes + verifies a request) | http://34.6.165.194:8080 · local: `cd ui && npm i && npm run dev` |
 | 🧭 **Conductor** — routing decision, signs the receipt | [dashboard](https://verify-sepolia.eigencloud.xyz/app/0x7F2EC821fbD68e8A20C7C01a9498b6C70bC9c896) |
 | 🔒 **Worker (prover)** — runs the model, signs the inference | [dashboard](https://verify-sepolia.eigencloud.xyz/app/0xdb06a76f914513519217DCb4c7c6E1160238f600) |
 | 🏟️ **Arena grader** — sandboxes a policy, signs the score | `http://34.136.240.56:8080` · [dashboard](https://verify-sepolia.eigencloud.xyz/app/0xa2b59f7988Dc1611d5df3F1FcDf3080daa50d2De) |

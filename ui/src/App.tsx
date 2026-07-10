@@ -1,71 +1,49 @@
 import { useEffect, useState } from "react";
-import { verifyChain, short, type Bundle, type Receipt } from "./verify";
+import {
+  verifyReceipt, short, DEFAULT_POLICY,
+  type Benchmark, type LeaderRow, type SubmitResult,
+} from "./arena";
 
-// On Vercel (HTTPS) we proxy through /api → conductor (see vercel.json) to avoid
-// mixed-content blocking; locally we hit the conductor IP directly.
-const DEFAULT_CONDUCTOR = import.meta.env.VITE_CONDUCTOR_BASE || "http://34.143.160.145:8080";
-const DASHBOARD = "https://verify-sepolia.eigencloud.xyz/app/0x7F2EC821fbD68e8A20C7C01a9498b6C70bC9c896";
-
-const EXAMPLES = [
-  "say hi in one word",
-  "Write a Python function for the nth Fibonacci number. ```py``` Why is recursion slow? How to fix it?",
-  "Translate 'good morning' to Japanese and explain the politeness level.",
-];
-
-type Health = { ok: boolean; signer: string; policy_hash: string };
+// On Vercel, /api proxies to the grader (see vercel.json). Locally, hit it directly.
+const API = import.meta.env.VITE_API_BASE || "http://34.136.240.56:8080";
+const REPO = "https://github.com/zeeshan8281/arena-router";
 
 export default function App() {
-  const [base, setBase] = useState(localStorage.getItem("conductor") || DEFAULT_CONDUCTOR);
-  const [health, setHealth] = useState<Health | null>(null);
-  const [connErr, setConnErr] = useState("");
-  const [prompt, setPrompt] = useState(EXAMPLES[1]);
+  const [bench, setBench] = useState<Benchmark | null>(null);
+  const [board, setBoard] = useState<LeaderRow[]>([]);
+  const [handle, setHandle] = useState(localStorage.getItem("handle") || "");
+  const [policy, setPolicy] = useState(localStorage.getItem("policy") || DEFAULT_POLICY);
+  const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [answer, setAnswer] = useState("");
-  const [bundle, setBundle] = useState<Bundle | null>(null);
-  const [tampered, setTampered] = useState(false);
+  const [err, setErr] = useState("");
+  const [result, setResult] = useState<(SubmitResult & { verified: boolean; recovered: string }) | null>(null);
 
-  const connect = async (b = base) => {
-    setConnErr(""); setHealth(null);
-    try {
-      const h = await fetch(`${b}/health`).then((r) => r.json());
-      setHealth(h); localStorage.setItem("conductor", b);
-    } catch {
-      setConnErr("Could not reach the conductor. Check the URL (its public IP can change on restart).");
-    }
-  };
-  useEffect(() => { connect(); /* eslint-disable-next-line */ }, []);
+  const loadBench = () => fetch(`${API}/benchmark`).then((r) => r.json()).then(setBench).catch(() => setErr("Can't reach the grader."));
+  const loadBoard = () => fetch(`${API}/leaderboard`).then((r) => r.json()).then((d) => setBoard(d.leaderboard || [])).catch(() => {});
+  useEffect(() => { loadBench(); loadBoard(); /* eslint-disable-next-line */ }, []);
 
-  const route = async () => {
-    setBusy(true); setError(""); setBundle(null); setAnswer(""); setTampered(false);
+  const submit = async () => {
+    if (!handle.trim()) { setErr("Pick a handle first."); return; }
+    setBusy(true); setErr(""); setResult(null);
+    localStorage.setItem("handle", handle); localStorage.setItem("policy", policy);
     try {
-      const res = await fetch(`${base}/v1/route`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ messages: [{ role: "user", content: prompt }], max_tokens: 220 }),
+      const res = await fetch(`${API}/submit`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ policy, participant: handle.trim(), note }),
       });
-      if (!res.ok) throw new Error(`conductor ${res.status}`);
-      const out = await res.json();
-      setAnswer(out.content || "(empty)");
-      // pull the full stored bundle (canonical + signer_address + worker canonicals)
-      const b: Bundle = await fetch(`${base}/trace/${out.task_id}`).then((r) => r.json());
-      setBundle(b);
+      const d: SubmitResult = await res.json();
+      if (!res.ok || d.error) throw new Error(d.error || `grader ${res.status}`);
+      const { ok, recovered } = verifyReceipt(d.receipt, d.signature, d.grader_address);
+      setResult({ ...d, verified: ok, recovered });
+      loadBoard();
     } catch (e: any) {
-      setError(e.message || "request failed");
+      setErr(e.message || "submit failed");
     } finally {
       setBusy(false);
     }
   };
 
-  // Tamper: mutate chosen_model, re-canonicalize against the ORIGINAL signature.
-  const shownReceipt: Receipt | undefined = bundle
-    ? tampered
-      ? { ...bundle.receipt, chosen_model: bundle.receipt.chosen_model + "  ⚠ SWAPPED" }
-      : bundle.receipt
-    : undefined;
-  const result = bundle ? verifyChain(bundle, shownReceipt) : null;
-
-  const r = bundle?.receipt;
+  const p = bench?.scoring_params;
 
   return (
     <>
@@ -74,175 +52,126 @@ export default function App() {
           <div className="brandmark">
             <img src="/eigen-icon.svg" alt="Eigen" />
             <span className="divider" />
-            <span className="title">Attested Router</span>
+            <span className="title">AutoRouter Arena</span>
           </div>
           <div className="spacer" />
           <span className="pill indigo">EigenCompute · Sepolia · Intel TDX</span>
-          <a className="pill" href={DASHBOARD} target="_blank" rel="noreferrer">Dashboard ↗</a>
+          {result?.grader_address && <span className="pill">grader {short(result.grader_address)}</span>}
+          <a className="pill" href={REPO} target="_blank" rel="noreferrer">Repo ↗</a>
         </div>
       </header>
 
       <main className="wrap" style={{ paddingTop: 40, paddingBottom: 80 }}>
-        <div style={{ maxWidth: 720 }}>
-          <span className="pill indigo" style={{ marginBottom: 16 }}>Verifiable AI routing</span>
-          <h1>Verify which model answered.<br />Don&apos;t trust it.</h1>
+        <div style={{ maxWidth: 760 }}>
+          <span className="pill indigo" style={{ marginBottom: 16 }}>Attested routing competition</span>
+          <h1>Build the best routing policy.<br />Get a score you can&apos;t fake.</h1>
           <p className="muted" style={{ fontSize: 15.5, marginTop: 16, lineHeight: 1.6 }}>
-            A semantic router running inside Intel TDX enclaves. Every routing decision and every
-            model inference is signed by an enclave-bound key. Your prompt below is routed live —
-            then <b style={{ color: "var(--foreground)" }}>your browser</b> independently recovers
-            every signer. No trust in the operator.
+            You write one function — <span className="mono">decide()</span>. An attested grader runs it in a
+            sandbox against a <b style={{ color: "var(--foreground)" }}>hidden</b> prompt set inside a TEE and
+            <b style={{ color: "var(--foreground)" }}> signs</b> your score. The leaderboard is verifiable —
+            no one, not even the organizer, can fake a number.
           </p>
         </div>
 
-        {/* connection */}
+        {/* objective / benchmark */}
         <div className="card pad" style={{ marginTop: 28 }}>
-          <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
-            <div style={{ flex: 1, minWidth: 260 }}>
-              <div className="k muted" style={{ fontSize: 11, marginBottom: 6, textTransform: "uppercase", letterSpacing: ".06em" }}>Conductor endpoint</div>
-              <input className="input mono" value={base} onChange={(e) => setBase(e.target.value)} spellCheck={false} />
-            </div>
-            <button className="btn outline" onClick={() => connect()}>Reconnect</button>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+            <h2>The benchmark</h2>
+            <span className="spacer" />
+            {bench && <span className="muted mono" style={{ fontSize: 12 }}>{bench.n_prompts} hidden prompts · eval_set_hash {short(bench.eval_set_hash)}</span>}
           </div>
-          <div style={{ display: "flex", gap: 16, marginTop: 14, alignItems: "center", flexWrap: "wrap" }}>
-            <span className="pill">
-              <span className={`dot ${health ? "live" : "off"}`} />
-              {health ? "conductor live" : connErr ? "offline" : "connecting…"}
-            </span>
-            {health && <span className="muted mono addr">signer {short(health.signer)}</span>}
-            {health && <span className="muted mono addr">policy {short(health.policy_hash)}</span>}
+          <div className="codebox" style={{ height: "auto", margin: "12px 0" }}>
+            score = mean(quality) − λ·mean(cost) + β·oss_rate
           </div>
-          {connErr && <p className="mono" style={{ color: "var(--destructive)", fontSize: 12, marginTop: 10 }}>{connErr}</p>}
+          <p className="muted" style={{ fontSize: 13.5, lineHeight: 1.6, margin: "0 0 14px" }}>
+            Free / open‑source models cost 0 <b style={{ color: "var(--foreground)" }}>and</b> earn the openness bonus.
+            Route to a free OSS model whenever it&apos;s good enough; only spend on a proprietary model when the quality gain beats the cost.
+          </p>
+          {p && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+            <span className="pill indigo">λ (cost) = {p.cost_penalty_lambda}</span>
+            <span className="pill indigo">β (openness) = {p.openness_bonus_beta}</span>
+            <span className="pill">confidence threshold = {p.confidence_threshold}</span>
+          </div>}
+          {bench && <div className="pipe" style={{ gridTemplateColumns: "1fr 1fr" }}>
+            {bench.models.map((m) => (
+              <div className="node" key={m.id} style={{ minHeight: 0 }}>
+                <div className="mono" style={{ fontSize: 12.5, fontWeight: 600 }}>{m.open_source ? "○" : "●"} {m.id}</div>
+                <div className="kv"><span className="muted">tier</span><span className="v">{m.tier}</span></div>
+                <div className="kv"><span className="muted">price/call</span><span className="v mono">${m.price_per_call}</span></div>
+              </div>
+            ))}
+          </div>}
         </div>
 
-        {/* prompt */}
-        <div className="card pad" style={{ marginTop: 16 }}>
-          <textarea className="textarea" value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Ask anything…" />
-          <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap", alignItems: "center" }}>
-            <button className="btn indigo" onClick={route} disabled={busy || !health}>
-              {busy ? <><span className="spin" style={{ display: "inline-block" }}>◠</span> Routing & attesting…</> : "Route & Attest →"}
-            </button>
-            <span className="spacer" />
-            {EXAMPLES.map((ex, i) => (
-              <span key={i} className="pill chip" onClick={() => setPrompt(ex)} title={ex}>
-                {ex.length > 34 ? ex.slice(0, 34) + "…" : ex}
-              </span>
+        <div className="grid2" style={{ marginTop: 18 }}>
+          {/* submit */}
+          <div className="card pad">
+            <h3 style={{ marginBottom: 12 }}>Submit a policy</h3>
+            <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+              <input className="input" style={{ flex: 1, minWidth: 140 }} placeholder="your handle" value={handle} onChange={(e) => setHandle(e.target.value)} />
+              <input className="input" style={{ flex: 1, minWidth: 140 }} placeholder="note (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
+            </div>
+            <textarea className="textarea mono" style={{ minHeight: 240, fontSize: 12 }} value={policy} onChange={(e) => setPolicy(e.target.value)} spellCheck={false} />
+            <div style={{ display: "flex", gap: 8, marginTop: 12, alignItems: "center" }}>
+              <button className="btn indigo" onClick={submit} disabled={busy}>
+                {busy ? <><span className="spin" style={{ display: "inline-block" }}>◠</span> Grading in the TEE…</> : "Submit → attested score"}
+              </button>
+              <button className="btn outline sm" onClick={() => setPolicy(DEFAULT_POLICY)}>reset template</button>
+            </div>
+            {err && <p className="mono" style={{ color: "var(--destructive)", fontSize: 12, marginTop: 10 }}>error: {err}</p>}
+
+            {result && (
+              <div className="fade" style={{ marginTop: 14 }}>
+                <div className={`banner ${result.verified ? "ok" : "bad"}`}>
+                  <b style={{ fontSize: 20 }}>{result.verified ? "✓" : "✗"}</b>
+                  <div>
+                    <div style={{ fontSize: 20, fontWeight: 700 }}>SCORE {result.score}</div>
+                    <div className="mono" style={{ fontSize: 11.5 }}>
+                      {result.verified ? `signed by grader enclave ${short(result.recovered)}` : "signature did not verify"}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                  <span className="pill">quality {result.mean_quality}</span>
+                  <span className="pill">cost ${result.mean_cost}</span>
+                  <span className="pill">oss {(result.oss_rate * 100).toFixed(0)}%</span>
+                  {result.invalid > 0 && <span className="pill bad">invalid {result.invalid}</span>}
+                </div>
+                <p className="muted mono" style={{ fontSize: 11, marginTop: 8 }}>submission {result.submission_id}</p>
+              </div>
+            )}
+          </div>
+
+          {/* leaderboard */}
+          <div className="card pad">
+            <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
+              <h3>Leaderboard</h3><span className="spacer" />
+              <button className="btn outline sm" onClick={loadBoard}>refresh</button>
+            </div>
+            {board.length === 0 && <p className="muted" style={{ fontSize: 13 }}>No submissions yet — be the first.</p>}
+            {board.map((r) => (
+              <div className="vrow" key={r.submission_id}>
+                <span className="pill" style={{ minWidth: 34, justifyContent: "center" }}>#{r.rank}</span>
+                <div className="grow"><div style={{ fontWeight: 500 }}>{r.participant}</div>
+                  <div className="muted mono addr">policy {short(r.policy_hash)}</div></div>
+                <span className="mono" style={{ fontWeight: 700 }}>{r.score}</span>
+              </div>
             ))}
           </div>
-          {error && <p className="mono" style={{ color: "var(--destructive)", fontSize: 12, marginTop: 10 }}>error: {error}</p>}
         </div>
 
-        {/* pipeline + verification */}
-        {r && result && (
-          <div className="fade" style={{ marginTop: 24 }}>
-            <h2 style={{ marginBottom: 14 }}>How this answer was produced</h2>
-            <div className="pipe">
-              <Node k="1 · Observe" title="Signals">
-                <KV label="tokens" v={r.signals.token_estimate} />
-                <KV label="lang" v={r.signals.detected_lang} />
-                <KV label="complexity" v={r.signals.complexity_band} />
-                <Arrow />
-              </Node>
-              <Node k="2 · Decide" title="Policy">
-                <KV label="looper" v={r.looper} />
-                <KV label="candidates" v={r.candidates_considered.length} />
-                <div className="muted mono" style={{ fontSize: 10.5, marginTop: 6 }}>policy {short(r.policy_hash)}</div>
-                <Arrow />
-              </Node>
-              <Node k="3 · Sign" title={<>Conductor <span className="pill indigo" style={{ padding: "1px 6px" }}>✍</span></>} sign>
-                <div className="muted mono addr">{short(bundle!.signer_address)}</div>
-                <div className="k muted" style={{ marginTop: 8 }}>chose</div>
-                <div className="mono" style={{ fontSize: 12, fontWeight: 600 }}>{r.chosen_model}</div>
-                <Arrow />
-              </Node>
-              <Node k="4 · Attest" title={<>Workers <span className="pill indigo" style={{ padding: "1px 6px" }}>✍</span></>} sign>
-                {r.worker_attestations.map((a, i) => (
-                  <div key={i} style={{ marginBottom: 6 }}>
-                    <div className="mono" style={{ fontSize: 11.5, fontWeight: 600 }}>{a.model_id}</div>
-                    <div className="muted mono addr">{short(a.worker_address)}</div>
-                  </div>
-                ))}
-              </Node>
-            </div>
-
-            {/* the payoff: client-side verification */}
-            <div className="card pad" style={{ marginTop: 18 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
-                <h3>Signature check — running in your browser (ethers.verifyMessage)</h3>
-                <span className="spacer" />
-                <button className={`btn sm ${tampered ? "indigo" : "outline"}`} onClick={() => setTampered((t) => !t)}>
-                  {tampered ? "↺ Restore receipt" : "⚠ Tamper: swap chosen_model"}
-                </button>
-              </div>
-
-              <div className={`banner ${result.allOk && result.receiptMatchesSigned ? "ok" : "bad"}`} style={{ marginBottom: 12 }}>
-                <b style={{ fontSize: 18 }}>{result.allOk && result.receiptMatchesSigned ? "✓" : "✗"}</b>
-                <div>
-                  {result.allOk && result.receiptMatchesSigned
-                    ? "CHAIN VERIFIED — the decision and every inference are signed by real enclave keys."
-                    : tampered
-                      ? "REJECTED — one byte changed and the recovered signer no longer matches. The receipt is provably unaltered."
-                      : "VERIFICATION FAILED."}
-                </div>
-              </div>
-
-              {!result.receiptMatchesSigned && (
-                <div className="vrow"><span className="pill bad">receipt ≠ signed bytes</span>
-                  <span className="muted grow" style={{ fontSize: 12 }}>the displayed receipt no longer canonicalizes to what was signed</span></div>
-              )}
-
-              {result.checks.map((c, i) => (
-                <div className="vrow" key={i}>
-                  <span className={`pill ${c.ok ? "ok" : "bad"}`}>{c.ok ? "✓" : "✗"}</span>
-                  <div className="grow">
-                    <div style={{ fontWeight: 500 }}>
-                      {c.role === "conductor" ? "Conductor receipt" : `Worker · ${c.model}`}
-                    </div>
-                    <div className="muted mono addr">
-                      recovered {short(c.recovered)} {c.ok ? "=" : "≠"} expected {short(c.expected)}
-                    </div>
-                  </div>
-                  <span className="pill">{c.role}</span>
-                </div>
-              ))}
-            </div>
-
-            <div className="grid2" style={{ marginTop: 18 }}>
-              <div className="card pad">
-                <h3 style={{ marginBottom: 10 }}>Answer <span className="muted" style={{ fontWeight: 400 }}>· {r.chosen_model}</span></h3>
-                <div className="scrollbox">
-                  <p style={{ fontSize: 13.5, lineHeight: 1.6, whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0 }}>{answer}</p>
-                </div>
-              </div>
-              <div className="card pad">
-                <h3 style={{ marginBottom: 10 }}>Signed receipt <span className="muted" style={{ fontWeight: 400 }}>· /trace/{r.task_id.slice(0, 8)}</span></h3>
-                <div className="codebox">{JSON.stringify(shownReceipt, null, 2)}</div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <footer className="muted" style={{ marginTop: 60, fontSize: 12, borderTop: "1px solid var(--border)", paddingTop: 20 }}>
-          Conductor & workers run in Intel TDX enclaves; keys are KMS-derived and never leave the enclave.
-          The worker&apos;s <span className="mono">openai</span> backend attests <i>"this enclave relayed this output for this model_id"</i> —
-          on-device weight attestation needs a GPU TEE tier. <a href="https://github.com/zeeshan8281/attested-vllm-router" target="_blank" rel="noreferrer">Source ↗</a>
-        </footer>
+        <div className="card pad" style={{ marginTop: 18 }}>
+          <h3 style={{ marginBottom: 10 }}>Why the score can&apos;t be gamed</h3>
+          <p className="muted" style={{ fontSize: 13.5, lineHeight: 1.6, margin: 0 }}>
+            Your <span className="mono">decide()</span> runs under SES capability isolation in the grader enclave —
+            no <span className="mono">fetch</span>/<span className="mono">fs</span>/<span className="mono">process</span>, so it can&apos;t read or leak the hidden prompts. The score is signed by a
+            KMS‑derived key that only exists inside the measured image, and the receipt commits to
+            <span className="mono"> policy_hash</span>, <span className="mono">eval_set_hash</span> and a root of per‑prompt results — so it&apos;s recomputable and
+            auditable after the set is revealed. Prefer the CLI for serious iteration:
+            {" "}<span className="mono">npm i -g ./arena && autorouter run</span>. <a href={REPO} target="_blank" rel="noreferrer">Repo ↗</a>
+          </p>
+        </div>
       </main>
     </>
   );
-}
-
-function Node({ k, title, children, sign }: { k: string; title: React.ReactNode; children: React.ReactNode; sign?: boolean }) {
-  return (
-    <div className={`node ${sign ? "sign" : ""}`}>
-      <div className="k">{k}</div>
-      <h3>{title}</h3>
-      {children}
-    </div>
-  );
-}
-function KV({ label, v }: { label: string; v: React.ReactNode }) {
-  return <div className="kv"><span className="muted">{label}</span><span className="v mono">{v}</span></div>;
-}
-function Arrow() {
-  return <svg className="arrow" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8h9M9 5l3 3-3 3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
