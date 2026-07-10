@@ -167,3 +167,26 @@ a:hover { text-decoration: underline; }
 @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── benchmark-platform layout (FrontierCS-style) ── */
+.nav { display: flex; align-items: center; gap: 22px; }
+.navlink { color: var(--muted-foreground); font-size: 13px; cursor: pointer; }
+.navlink:hover { color: var(--foreground); text-decoration: none; }
+section { scroll-margin-top: 72px; padding: 40px 0; border-top: 1px solid var(--border); }
+section:first-of-type { border-top: none; }
+.eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted-foreground); font-weight: 600; margin-bottom: 12px; }
+.lede { font-size: 16px; line-height: 1.65; color: var(--muted-foreground); max-width: 720px; }
+.hero-h { font-size: 3.4rem; line-height: 1.0; letter-spacing: -2px; font-weight: 700; }
+@media (max-width: 720px) { .hero-h { font-size: 2.3rem; } }
+.term { background: #0a0a0a; color: #e5e5e5; border-radius: var(--radius-lg); padding: 16px 18px; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.7; overflow-x: auto; }
+.term .c { color: #7dd3a8; }               /* command */
+.term .p { color: #6b7280; }               /* prompt $ / comment */
+.term .o { color: #a3a3a3; }               /* output */
+.step { display: flex; gap: 14px; padding: 14px 0; border-top: 1px dashed var(--border); }
+.step:first-child { border-top: none; }
+.step .num { flex: none; width: 26px; height: 26px; border-radius: 9999px; background: color-mix(in srgb, var(--primary) 10%, white); color: var(--primary); font-weight: 700; font-size: 12px; display: flex; align-items: center; justify-content: center; }
+.lbrow { display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 12px; padding: 11px 0; border-top: 1px solid var(--border); }
+.lbrow:first-of-type { border-top: none; }
+.lbrow .rk { font-family: var(--font-heading); font-weight: 700; font-size: 15px; color: var(--muted-foreground); }
+.lbrow.top1 .rk { color: var(--primary); }
+.affil { display: flex; align-items: center; gap: 16px; color: var(--muted-foreground); font-size: 12px; flex-wrap: wrap; }
