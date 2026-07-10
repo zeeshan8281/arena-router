@@ -63,7 +63,7 @@ Intuition: routing an easy prompt to a free OSS model gets full quality at zero 
 - `single` — 1 call (`candidates[0]`).
 - `confidence` — call candidates in order; stop at the first whose confidence ≥ threshold; cost = calls made. Escalation only costs when it happens.
 - `ratings` — call all candidates; best answer wins; cost = sum of all.
-- `remom` — all candidates + an aggregator; small quality synergy; highest cost.
+- `remom` — all candidates + an aggregator (`candidates[0]`); the aggregator IS the result, so quality/cost/openness attribute to it (no best-of-all bonus); highest cost.
 
 ## 5. Local testing (before you submit)
 

@@ -23,7 +23,7 @@ export interface Params {
 export interface Decision { looper: string; candidates: string[] }
 export interface PromptRow { id: string; chosen_model: string | null; quality: number; cost: number }
 
-type Sim = { chosen: string; called: string[]; qualityOverride?: number } | { invalid: true };
+type Sim = { chosen: string; called: string[] } | { invalid: true };
 
 function simulate(dec: Decision | null, outcomes: Record<string, Outcome>, thresh: number, byId: Record<string, ModelCard>): Sim {
   const cand = (dec?.candidates ?? []).filter((id) => byId[id] && outcomes[id]);
@@ -44,9 +44,12 @@ function simulate(dec: Decision | null, outcomes: Record<string, Outcome>, thres
       return { chosen, called: cand };
     }
     case "remom": {
+      // The aggregator (cand[0]) produces the final answer, so quality, cost and
+      // openness all attribute to it. No "best-of-all + bonus": that let a policy
+      // buy a strong model's quality while crediting a cheap open model. You still
+      // pay for every model called.
       const agg = cand[0];
-      const best = Math.max(...cand.map(q));
-      return { chosen: agg, called: [...cand, agg], qualityOverride: Math.min(1, best + 0.03) };
+      return { chosen: agg, called: [...cand, agg] };
     }
     default:
       return { invalid: true };
@@ -80,7 +83,7 @@ export function score(
       rows.push({ id: p.id, chosen_model: null, quality: 0, cost: 0 });
       continue;
     }
-    const quality = sim.qualityOverride ?? p.outcomes[sim.chosen].quality;
+    const quality = p.outcomes[sim.chosen].quality;
     const cost = sim.called.reduce((s, id) => s + byId[id].price_per_call, 0);
     if (byId[sim.chosen].open_source) oss++;
     sumQ += quality; sumC += cost;

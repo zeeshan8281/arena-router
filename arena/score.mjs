@@ -14,10 +14,10 @@ export function simulate(dec, outcomes, thresh, byId) {
       return { chosen: called[called.length - 1], called };
     }
     case "ratings": return { chosen: [...cand].sort((a, b) => q(b) - q(a))[0], called: cand };
-    case "remom": {
-      const best = Math.max(...cand.map(q));
-      return { chosen: cand[0], called: [...cand, cand[0]], qualityOverride: Math.min(1, best + 0.03) };
-    }
+    // aggregator (cand[0]) IS the final answer — quality/cost/openness attribute
+    // to it. No best-of-all bonus (that let you buy a strong model's quality
+    // while crediting a cheap open model). You still pay for every model called.
+    case "remom": return { chosen: cand[0], called: [...cand, cand[0]] };
     default: return { invalid: true };
   }
 }
@@ -33,7 +33,7 @@ export function scorePolicy(decideFn, prompts, catalog) {
     try { dec = decideFn({ id: p.id, text: p.text, signals: p.signals }, catalog.models); } catch {}
     const sim = simulate(dec, p.outcomes, T, byId);
     if (sim.invalid) { invalid++; rows.push({ id: p.id, looper: dec?.looper ?? "—", chosen: "INVALID", called: 0, quality: 0, cost: 0, oss: false }); continue; }
-    const quality = sim.qualityOverride ?? p.outcomes[sim.chosen].quality;
+    const quality = p.outcomes[sim.chosen].quality;
     const cost = sim.called.reduce((s, id) => s + byId[id].price_per_call, 0);
     const isOss = byId[sim.chosen].open_source;
     sumQ += quality; sumC += cost; if (isOss) oss++;
