@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { verifyChain, short, type Bundle, type Receipt } from "./verify";
 
-const DEFAULT_CONDUCTOR = "http://34.143.160.145:8080";
+// On Vercel (HTTPS) we proxy through /api → conductor (see vercel.json) to avoid
+// mixed-content blocking; locally we hit the conductor IP directly.
+const DEFAULT_CONDUCTOR = import.meta.env.VITE_CONDUCTOR_BASE || "http://34.143.160.145:8080";
 const DASHBOARD = "https://verify-sepolia.eigencloud.xyz/app/0x7F2EC821fbD68e8A20C7C01a9498b6C70bC9c896";
 
 const EXAMPLES = [
