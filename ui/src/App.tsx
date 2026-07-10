@@ -193,11 +193,12 @@ function QuickTry() {
         <h3>Quick try — submit from the browser</h3><span className="spacer" />
         <button className="btn outline sm" onClick={() => setOpen(false)}>close</button>
       </div>
-      <input className="input" style={{ marginBottom: 8 }} placeholder="your handle" value={handle} onChange={(e) => setHandle(e.target.value)} />
+      <input className="input" style={{ marginBottom: 8, borderColor: handle.trim() ? undefined : "var(--destructive)" }} placeholder="your handle (required)" value={handle} onChange={(e) => setHandle(e.target.value)} />
       <textarea className="textarea mono" style={{ minHeight: 200, fontSize: 12 }} value={policy} onChange={(e) => setPolicy(e.target.value)} spellCheck={false} />
-      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-        <button className="btn indigo" onClick={submit} disabled={busy}>{busy ? "Grading in the TEE…" : "Submit → attested score"}</button>
+      <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center" }}>
+        <button className="btn indigo" onClick={submit} disabled={busy || !handle.trim()}>{busy ? "Grading in the TEE…" : "Submit → attested score"}</button>
         <button className="btn outline sm" onClick={() => setPolicy(DEFAULT_POLICY)}>reset</button>
+        {!handle.trim() && <span className="muted" style={{ fontSize: 12 }}>← enter a handle to submit</span>}
       </div>
       {err && <p className="mono" style={{ color: "var(--destructive)", fontSize: 12, marginTop: 8 }}>error: {err}</p>}
       {res && (
