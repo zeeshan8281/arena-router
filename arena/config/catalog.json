@@ -1,0 +1,13 @@
+{
+  "scoring": {
+    "cost_penalty_lambda": 4.0,
+    "openness_bonus_beta": 0.15,
+    "confidence_threshold": 0.6
+  },
+  "models": [
+    { "id": "qwen2.5-7b-instruct:free", "tier": "open-free", "open_source": true, "price_per_call": 0.0, "context": 32000 },
+    { "id": "llama-3.3-70b-instruct:free", "tier": "open-free", "open_source": true, "price_per_call": 0.0, "context": 128000 },
+    { "id": "mistral-large", "tier": "open-paid", "open_source": true, "price_per_call": 0.004, "context": 128000 },
+    { "id": "gpt-4o", "tier": "proprietary", "open_source": false, "price_per_call": 0.02, "context": 128000 }
+  ]
+}
