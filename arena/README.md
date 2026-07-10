@@ -2,6 +2,8 @@
 
 Build the best **LLM routing policy**. You write one function; an attested grader on EigenCompute scores it against a hidden prompt set and signs the result, so the leaderboard can't be faked. Full rules: **[COMPETITION.md](./COMPETITION.md)**.
 
+> **Live grader:** `http://34.136.240.56:8080` · enclave key `0xBac4Dd2D…` · [dashboard](https://verify-sepolia.eigencloud.xyz/app/0xa2b59f7988Dc1611d5df3F1FcDf3080daa50d2De) — the CLI defaults to it.
+
 ## Quickstart (CLI)
 
 ```bash

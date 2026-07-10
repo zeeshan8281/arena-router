@@ -11,7 +11,7 @@ import { verifyMessage } from "ethers";
 const KIT = resolve(dirname(fileURLToPath(import.meta.url)), "..");   // arena/
 const CFG_DIR = join(homedir(), ".config", "autorouter");
 const CFG = join(CFG_DIR, "config.json");
-const DEFAULT_API = process.env.AUTOROUTER_API || "http://34.6.165.194:8080"; // set to your grader
+const DEFAULT_API = process.env.AUTOROUTER_API || "http://34.136.240.56:8080"; // live autorouter-grader (EigenCompute)
 
 const cfg = () => (existsSync(CFG) ? JSON.parse(readFileSync(CFG, "utf8")) : {});
 const saveCfg = (c) => { mkdirSync(CFG_DIR, { recursive: true }); writeFileSync(CFG, JSON.stringify(c, null, 2)); };
