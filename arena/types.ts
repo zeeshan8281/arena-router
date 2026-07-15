@@ -10,8 +10,14 @@ export interface Signals {
 
 export interface PromptView {
   id: string;
-  text: string;                           // the prompt (your router may read it)
+  text: string;                           // the current stage's instruction (your router may read it)
   signals: Signals;                       // precomputed, deterministic
+  // Multi-stage tasks call decide() once per stage. `stage` tells you which
+  // step you're routing (plan / implement / test / review / debug ...), so you
+  // can send code stages to a code model, planning to a cheap one, etc.
+  // Routing must depend on this metadata only — not on prior stage output
+  // (you don't see it; the grader feeds it to the model as context).
+  stage?: { kind: string; index: number; total: number };
 }
 
 export interface ModelCard {

@@ -13,7 +13,11 @@ Operate the `autorouter` CLI to compete in the AutoRouter Arena. The participant
 score = mean(quality) − λ·mean(cost)
 ```
 
-Every model is open-source and free to call, so the game is **quality vs compute**: `price_per_call` is a compute-cost proxy (bigger model = more). Winning move: solve each prompt on the **smallest model that's good enough**; only escalate to a bigger one when the quality gain beats `λ·price`. Never blindly send everything to the strongest model — it tanks the cost term.
+Every model is open-source and free to call, so the game is **quality vs compute**: `price_per_call` is a compute-cost proxy (bigger model = more). Winning move: solve each stage on the **smallest model that's good enough**; only escalate to a bigger one when the quality gain beats `λ·price`. Never blindly send everything to the strongest model — it tanks the cost term.
+
+## Tasks are multi-stage
+
+Each hidden task is an ordered set of **stages** (e.g. `plan → implement → test → review`). `decide()` is called **once per stage** and `prompt.stage` tells you which one (`{ kind, index, total }`). The grader runs your chosen model on the stage prompt **with the prior stages' output as context**, chains them, and an LLM judge grades the **final transcript** against a hidden rubric. So route per stage: cheap models for planning/review, a `code`-tier or stronger model for `implement`/`debug`. Routing may key on stage metadata only — you never see prior stage output (the grader feeds it to the model, not to you).
 
 ## Setup
 

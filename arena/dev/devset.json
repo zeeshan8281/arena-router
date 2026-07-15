@@ -1,21 +1,27 @@
 {
-  "note": "PUBLIC dev set for local iteration. Precomputed per-model {quality, confidence} so scoring is instant, offline and deterministic — a PROXY of the live hidden grader (which calls the models for real). Illustrative sample data, not a benchmark. Model ids match arena/config/catalog.json.",
-  "prompts": [
-    { "id": "p1", "text": "What is the capital of France?", "signals": { "token_estimate": 7, "detected_lang": "en", "complexity_band": "low", "has_code": false },
-      "outcomes": { "llama-3.2-3b": {"quality":0.90,"confidence":0.88}, "qwen2.5-7b": {"quality":0.93,"confidence":0.90}, "mistral-small-24b": {"quality":0.95,"confidence":0.92}, "qwen3-coder": {"quality":0.92,"confidence":0.88}, "llama-3.3-70b": {"quality":0.97,"confidence":0.94} } },
-    { "id": "p2", "text": "Reverse a string in Python, one-liner.", "signals": { "token_estimate": 10, "detected_lang": "en", "complexity_band": "med", "has_code": true },
-      "outcomes": { "llama-3.2-3b": {"quality":0.70,"confidence":0.68}, "qwen2.5-7b": {"quality":0.80,"confidence":0.78}, "mistral-small-24b": {"quality":0.88,"confidence":0.86}, "qwen3-coder": {"quality":0.95,"confidence":0.93}, "llama-3.3-70b": {"quality":0.90,"confidence":0.88} } },
-    { "id": "p3", "text": "Translate 'good morning, how are you?' to formal Japanese and explain politeness.", "signals": { "token_estimate": 18, "detected_lang": "en", "complexity_band": "med", "has_code": false },
-      "outcomes": { "llama-3.2-3b": {"quality":0.60,"confidence":0.55}, "qwen2.5-7b": {"quality":0.72,"confidence":0.68}, "mistral-small-24b": {"quality":0.82,"confidence":0.80}, "qwen3-coder": {"quality":0.75,"confidence":0.70}, "llama-3.3-70b": {"quality":0.90,"confidence":0.88} } },
-    { "id": "p4", "text": "A train leaves A at 60mph, another leaves B 90 miles away at 40mph toward it 30 min later. When do they meet?", "signals": { "token_estimate": 32, "detected_lang": "en", "complexity_band": "high", "has_code": false },
-      "outcomes": { "llama-3.2-3b": {"quality":0.35,"confidence":0.40}, "qwen2.5-7b": {"quality":0.50,"confidence":0.52}, "mistral-small-24b": {"quality":0.68,"confidence":0.66}, "qwen3-coder": {"quality":0.60,"confidence":0.58}, "llama-3.3-70b": {"quality":0.88,"confidence":0.86} } },
-    { "id": "p5", "text": "Implement an LRU cache with O(1) get/put and explain the invariants.", "signals": { "token_estimate": 20, "detected_lang": "en", "complexity_band": "high", "has_code": true },
-      "outcomes": { "llama-3.2-3b": {"quality":0.40,"confidence":0.45}, "qwen2.5-7b": {"quality":0.55,"confidence":0.55}, "mistral-small-24b": {"quality":0.72,"confidence":0.70}, "qwen3-coder": {"quality":0.92,"confidence":0.90}, "llama-3.3-70b": {"quality":0.86,"confidence":0.84} } },
-    { "id": "p6", "text": "Summarize the causes of the 2008 financial crisis in 3 bullets.", "signals": { "token_estimate": 16, "detected_lang": "en", "complexity_band": "med", "has_code": false },
-      "outcomes": { "llama-3.2-3b": {"quality":0.75,"confidence":0.72}, "qwen2.5-7b": {"quality":0.82,"confidence":0.80}, "mistral-small-24b": {"quality":0.88,"confidence":0.86}, "qwen3-coder": {"quality":0.80,"confidence":0.78}, "llama-3.3-70b": {"quality":0.91,"confidence":0.89} } },
-    { "id": "p7", "text": "Prove that the square root of 2 is irrational, then generalize to sqrt(p) for prime p.", "signals": { "token_estimate": 22, "detected_lang": "en", "complexity_band": "high", "has_code": false },
-      "outcomes": { "llama-3.2-3b": {"quality":0.45,"confidence":0.48}, "qwen2.5-7b": {"quality":0.60,"confidence":0.58}, "mistral-small-24b": {"quality":0.75,"confidence":0.72}, "qwen3-coder": {"quality":0.65,"confidence":0.62}, "llama-3.3-70b": {"quality":0.92,"confidence":0.90} } },
-    { "id": "p8", "text": "What day comes after Monday?", "signals": { "token_estimate": 6, "detected_lang": "en", "complexity_band": "low", "has_code": false },
-      "outcomes": { "llama-3.2-3b": {"quality":0.92,"confidence":0.90}, "qwen2.5-7b": {"quality":0.94,"confidence":0.92}, "mistral-small-24b": {"quality":0.95,"confidence":0.93}, "qwen3-coder": {"quality":0.93,"confidence":0.90}, "llama-3.3-70b": {"quality":0.96,"confidence":0.94} } }
+  "note": "PUBLIC dev set of MULTI-STAGE tasks for local iteration. Each stage ships precomputed per-model {quality, confidence} so scoring is instant, offline and deterministic — a PROXY of the live hidden grader (which routes the same way but runs the models for real and judges the final transcript). Illustrative sample data. Model ids match arena/config/catalog.json.",
+  "tasks": [
+    {
+      "id": "wr", "title": "Reverse the word order in a sentence",
+      "stages": [
+        { "id": "s1", "kind": "plan", "signals": { "token_estimate": 28, "detected_lang": "en", "complexity_band": "low", "has_code": false },
+          "outcomes": { "llama-3.2-3b": {"quality":0.82,"confidence":0.80}, "qwen2.5-7b": {"quality":0.88,"confidence":0.85}, "mistral-small-24b": {"quality":0.90,"confidence":0.88}, "qwen3-coder": {"quality":0.85,"confidence":0.82}, "llama-3.3-70b": {"quality":0.93,"confidence":0.90} } },
+        { "id": "s2", "kind": "implement", "signals": { "token_estimate": 34, "detected_lang": "en", "complexity_band": "high", "has_code": true },
+          "outcomes": { "llama-3.2-3b": {"quality":0.60,"confidence":0.60}, "qwen2.5-7b": {"quality":0.75,"confidence":0.72}, "mistral-small-24b": {"quality":0.85,"confidence":0.83}, "qwen3-coder": {"quality":0.95,"confidence":0.92}, "llama-3.3-70b": {"quality":0.90,"confidence":0.88} } },
+        { "id": "s3", "kind": "review", "signals": { "token_estimate": 22, "detected_lang": "en", "complexity_band": "low", "has_code": false },
+          "outcomes": { "llama-3.2-3b": {"quality":0.70,"confidence":0.68}, "qwen2.5-7b": {"quality":0.80,"confidence":0.78}, "mistral-small-24b": {"quality":0.88,"confidence":0.85}, "qwen3-coder": {"quality":0.82,"confidence":0.80}, "llama-3.3-70b": {"quality":0.92,"confidence":0.90} } }
+      ]
+    },
+    {
+      "id": "np", "title": "Find and fix a null-pointer bug",
+      "stages": [
+        { "id": "s1", "kind": "debug", "signals": { "token_estimate": 60, "detected_lang": "en", "complexity_band": "high", "has_code": true },
+          "outcomes": { "llama-3.2-3b": {"quality":0.45,"confidence":0.48}, "qwen2.5-7b": {"quality":0.60,"confidence":0.58}, "mistral-small-24b": {"quality":0.78,"confidence":0.75}, "qwen3-coder": {"quality":0.88,"confidence":0.85}, "llama-3.3-70b": {"quality":0.92,"confidence":0.90} } },
+        { "id": "s2", "kind": "test", "signals": { "token_estimate": 30, "detected_lang": "en", "complexity_band": "high", "has_code": true },
+          "outcomes": { "llama-3.2-3b": {"quality":0.55,"confidence":0.55}, "qwen2.5-7b": {"quality":0.68,"confidence":0.65}, "mistral-small-24b": {"quality":0.82,"confidence":0.80}, "qwen3-coder": {"quality":0.93,"confidence":0.90}, "llama-3.3-70b": {"quality":0.88,"confidence":0.86} } },
+        { "id": "s3", "kind": "review", "signals": { "token_estimate": 24, "detected_lang": "en", "complexity_band": "low", "has_code": false },
+          "outcomes": { "llama-3.2-3b": {"quality":0.65,"confidence":0.62}, "qwen2.5-7b": {"quality":0.78,"confidence":0.75}, "mistral-small-24b": {"quality":0.86,"confidence":0.84}, "qwen3-coder": {"quality":0.80,"confidence":0.78}, "llama-3.3-70b": {"quality":0.91,"confidence":0.89} } }
+      ]
+    }
   ]
 }

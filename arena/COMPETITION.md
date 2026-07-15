@@ -24,6 +24,10 @@ export function decide(prompt: PromptView, models: ModelCard[]): Decision;
 
 You pick *which* models to consider and *how* to combine them (the looper). The grader runs them for you. Start from [`policy.template.ts`](./policy.template.ts).
 
+**Tasks are multi-stage.** Each hidden task is an ordered set of stages (e.g. `plan → implement → test → review`). `decide()` is called **once per stage**; `prompt.stage` = `{ kind, index, total }`. The grader runs your chosen model on the stage prompt with the prior stages' output as context, chains them, and grades the **final transcript**. Route per stage — cheap for planning/review, a `code`/stronger model for `implement`/`debug`. Routing sees stage metadata only; you never see prior output.
+
+**Your policy must be your own.** The grader rejects any submission byte-identical to the shipped starter/example (comments + whitespace are normalized away) — change `decide()` first.
+
 ### Rules (enforced by the grader sandbox)
 - **Pure & deterministic.** No network, no filesystem, no clock, no randomness. Same policy → same `policy_hash` → reproducible score.
 - **Runs in an isolate** (`isolated-vm`): no Node/host APIs, a per-call CPU timeout, no way to read other submissions or phone home.

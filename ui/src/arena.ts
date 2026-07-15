@@ -31,21 +31,29 @@ export interface SubmitResult {
   receipt: unknown; signature: string; grader_address: string; error?: string;
 }
 
-// Starter policy shown in the editor. Cheapest-first, escalate the hard ones.
+// Starter policy shown in the editor. Tasks are multi-stage — route each stage.
 export const DEFAULT_POLICY = `import type { PromptView, ModelCard, Decision } from "./types";
 
-// Every model is open + free to call — the game is quality vs compute.
-//   score = mean_quality - λ·mean_cost   (price_per_call = compute-cost proxy)
+// Tasks are multi-stage (plan → implement → test → review). decide() runs once
+// per stage; route on prompt.stage.kind. Every model is open + free, so it's
+// quality vs compute (price_per_call = compute-cost proxy):
+//   score = mean_quality - λ·mean_cost
 export function decide(prompt: PromptView, models: ModelCard[]): Decision {
-  // cheapest (smallest) -> most expensive (largest) compute
   const ladder = [...models].sort((a, b) => a.price_per_call - b.price_per_call).map(m => m.id);
+  const cheapest = ladder[0];
+  const strongest = ladder[ladder.length - 1];
+  const coder = models.find(m => m.tier === "code")?.id;
+  const kind = prompt.stage?.kind;
 
-  // Hard prompt: start cheap and escalate up the ladder only if confidence is low.
-  // You pay for a bigger call only when it actually escalates.
-  if (prompt.signals.complexity_band === "high" || prompt.signals.has_code) {
-    return { looper: "confidence", candidates: ladder };
+  // Coding stages → a code specialist, escalate to the strongest if unsure.
+  if (kind === "implement" || kind === "debug" || prompt.signals.has_code) {
+    return { looper: "confidence", candidates: [coder ?? cheapest, strongest] };
   }
-  // Easy/medium: smallest model, single shot. Lowest compute.
-  return { looper: "single", candidates: [ladder[0]] };
+  // Reasoning stages (plan / review / test) → a mid model, single shot.
+  if (kind === "plan" || kind === "review" || kind === "test") {
+    return { looper: "single", candidates: [ladder[Math.min(2, ladder.length - 1)]] };
+  }
+  // Anything else → cheapest.
+  return { looper: "single", candidates: [cheapest] };
 }
 `;

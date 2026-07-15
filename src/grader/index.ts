@@ -34,7 +34,8 @@ function decodeJson<T>(name: string, raw?: string): T {
 }
 
 const catalog = decodeJson<{ scoring: Params; models: ModelCard[] }>("CATALOG_PUBLIC", process.env.CATALOG_PUBLIC);
-const hidden = decodeJson<{ prompts: HiddenTask[] }>("HIDDEN_SET", process.env.HIDDEN_SET_B64);
+const hidden = decodeJson<{ tasks: HiddenTask[] }>("HIDDEN_SET", process.env.HIDDEN_SET_B64);
+const tasks = hidden.tasks;
 const params = catalog.scoring;
 const models = catalog.models;
 const infer = makeOpenRouter(process.env.OPENROUTER_API_KEY!, graderModel, Object.fromEntries(models.map((m) => [m.id, m])));
@@ -42,9 +43,16 @@ const benchmarkName = process.env.BENCHMARK_NAME_PUBLIC ?? "autorouter-arena";
 const version = process.env.ROUTER_VERSION_PUBLIC ?? "1.0.0";
 
 const catalogHash = hash(canonicalize({ models, scoring: params }));
-// eval_set_hash commits to which tasks AND their grading rubric (the rubric steers the score).
-const evalSetHash = hash(canonicalize(hidden.prompts.map((p) => ({ id: p.id, text: p.text, rubric: p.rubric })).sort((a, b) => a.id.localeCompare(b.id))));
-const sandboxPrompts = hidden.prompts.map((p) => ({ id: p.id, text: p.text, signals: p.signals })); // rubric withheld from the policy
+// eval_set_hash commits to which tasks, their stages, AND the rubric that steers the score.
+const evalSetHash = hash(canonicalize(
+  tasks.map((t) => ({ id: t.id, title: t.title, stages: t.stages.map((s) => ({ id: s.id, kind: s.kind, prompt: s.prompt })), rubric: t.rubric }))
+    .sort((a, b) => a.id.localeCompare(b.id)),
+));
+// One decide() call per stage. Composite id `${taskId}::${stageId}`; rubric withheld.
+const sandboxPrompts = tasks.flatMap((t) =>
+  t.stages.map((s, i) => ({ id: `${t.id}::${s.id}`, text: s.prompt, signals: s.signals, stage: { kind: s.kind, index: i, total: t.stages.length } })),
+);
+const totalStages = sandboxPrompts.length;
 
 interface Stored {
   submission_id: string; participant: string; note: string; score: number;
@@ -65,7 +73,7 @@ app.get("/pubkey", (_req, res) => res.json({ address: wallet.address }));
 app.get("/benchmark", (_req, res) => res.json({
   name: benchmarkName, version,
   models, scoring_params: params, grader_model: graderModel,
-  n_prompts: hidden.prompts.length,
+  n_prompts: tasks.length, n_stages: totalStages,
   eval_set_hash: evalSetHash, catalog_hash: catalogHash,
   objective: "score = mean_quality - lambda*mean_cost + beta*oss_rate",
 }));
@@ -84,7 +92,7 @@ app.post("/submit", async (req, res) => {
   const run = await runPolicy(js, sandboxPrompts, models);
   if (!run.ok || !run.decisions) return res.status(400).json({ error: run.error ?? "policy failed" });
 
-  const scored = await score(run.decisions, hidden.prompts, models, params, infer);
+  const scored = await score(run.decisions, tasks, models, params, infer);
   const submission_id = randomUUID();
   const results_root = hash(canonicalize(scored.rows));
 
@@ -97,7 +105,7 @@ app.post("/submit", async (req, res) => {
     eval_set_hash: evalSetHash,
     catalog_hash: catalogHash,
     scoring_params: params,
-    n_prompts: hidden.prompts.length,
+    n_prompts: tasks.length,
     mean_quality: round(scored.mean_quality),
     mean_cost: round(scored.mean_cost, 6),
     oss_rate: round(scored.oss_rate),
@@ -148,5 +156,5 @@ function round(n: number, d = 4): number { return Math.round(n * 10 ** d) / 10 *
 
 const port = Number(process.env.PORT) || 8080;
 app.listen(port, "0.0.0.0", () => {
-  console.log(`autorouter-grader v${version} listening on :${port} | grader=${wallet.address} | benchmark=${benchmarkName} | n=${hidden.prompts.length} | eval_set_hash=${evalSetHash}`);
+  console.log(`autorouter-grader v${version} listening on :${port} | grader=${wallet.address} | benchmark=${benchmarkName} | tasks=${tasks.length} stages=${totalStages} | eval_set_hash=${evalSetHash}`);
 });

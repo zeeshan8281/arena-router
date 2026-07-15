@@ -10,7 +10,8 @@ declare const Compartment: new (endowments?: Record<string, unknown>) => { evalu
 
 lockdown({ errorTaming: "unsafe", overrideTaming: "severe" });
 
-interface PromptView { id: string; text: string; signals: Record<string, unknown> }
+interface Stage { kind: string; index: number; total: number }
+interface PromptView { id: string; text: string; signals: Record<string, unknown>; stage?: Stage }
 const { policyJs, prompts, models } = workerData as {
   policyJs: string;
   prompts: PromptView[];
@@ -26,7 +27,7 @@ try {
 
   for (const p of prompts) {
     try {
-      const view = { id: p.id, text: p.text, signals: p.signals };
+      const view = { id: p.id, text: p.text, signals: p.signals, stage: p.stage };
       const d = decide(view, models) as { looper?: string; candidates?: string[] };
       // copy out only the fields we accept (plain data crosses the boundary)
       out[p.id] = d && Array.isArray(d.candidates)

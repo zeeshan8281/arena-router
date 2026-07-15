@@ -22,7 +22,7 @@ export interface SandboxResult {
 /** Run the policy over all prompts in an isolated worker with a wall-clock cap. */
 export function runPolicy(
   policyJs: string,
-  prompts: { id: string; text: string; signals: Record<string, unknown> }[],
+  prompts: { id: string; text: string; signals: Record<string, unknown>; stage?: { kind: string; index: number; total: number } }[],
   models: unknown[],
   timeoutMs = 5000,
 ): Promise<SandboxResult> {
