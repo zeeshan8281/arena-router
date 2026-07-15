@@ -5,10 +5,10 @@ import {
 } from "./arena";
 
 // Reads (benchmark/leaderboard) → grader (via /grader proxy on Vercel, direct locally).
-const GRADER = import.meta.env.VITE_GRADER_BASE || "http://34.187.54.54:8080";
+const GRADER = import.meta.env.VITE_GRADER_BASE || "http://34.7.20.95:8080";
 const ON_VERCEL = Boolean(import.meta.env.VITE_GRADER_BASE);
 const REPO = "https://github.com/zeeshan8281/arena-router";
-const GRADER_DASH = "https://verify.eigencloud.xyz/app/0x6aA6Df01701e1bbDC4449E04dBe73282B731B6C3";
+const GRADER_DASH = "https://verify-sepolia.eigencloud.xyz/app/0x25e745d0e7a7510d79184a07E02AcEC3eEE57F17";
 
 type Session = { login: string | null; configured: boolean } | "local" | "loading";
 
