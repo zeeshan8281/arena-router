@@ -23,7 +23,7 @@ export interface ModelCard { id: string; tier: string; open_source: boolean; pri
 export interface Benchmark {
   name: string; version: string; models: ModelCard[];
   scoring_params: { cost_penalty_lambda: number; openness_bonus_beta: number; confidence_threshold: number };
-  n_prompts: number; eval_set_hash: string; catalog_hash: string;
+  n_prompts: number; n_stages?: number; eval_set_hash: string; catalog_hash: string;
 }
 export interface LeaderRow { rank: number; participant: string; score: number; submission_id: string; policy_hash: string }
 export interface SubmitResult {

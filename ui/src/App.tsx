@@ -88,21 +88,21 @@ export default function App() {
           <div className="eyebrow">The benchmark</div>
           <h2>Route smart, spend little — across open models</h2>
           <p className="lede" style={{ marginTop: 12 }}>
-            You pick which model handles each request and how (single, confidence-escalate, ratings, remom).
-            Every model is open-source and free to call, so the game is <b>quality vs compute</b>.
-            The grader runs your policy over {bench?.n_prompts ?? "N"} hidden prompts and scores:
+            Tasks are multi-stage (plan → implement → test → review). You route each stage and how
+            (single, confidence-escalate, ratings, remom). Every model is open-source and free to call,
+            so the game is <b>quality vs compute</b>. The grader runs your policy across the hidden tasks and scores:
           </p>
           <div className="term" style={{ margin: "16px 0", maxWidth: 520 }}>score = mean(quality) − λ·mean(cost)</div>
           {p && (
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
               <span className="pill indigo">λ cost = {p.cost_penalty_lambda}</span>
               <span className="pill">confidence threshold = {p.confidence_threshold}</span>
-              <span className="pill">{bench!.n_prompts} hidden prompts</span>
+              <span className="pill">{bench!.n_prompts} hidden tasks{bench!.n_stages ? ` · ${bench!.n_stages} stages` : ""}</span>
             </div>
           )}
           <p className="muted" style={{ fontSize: 13.5, maxWidth: 720, lineHeight: 1.6 }}>
             <code>price / call</code> is a <b style={{ color: "var(--foreground)" }}>compute-cost proxy</b> — a bigger, stronger model costs more.
-            The winning move is to solve each prompt on the smallest model that&apos;s good enough, and escalate to a bigger one only when the quality gain beats the compute it costs.
+            The winning move is to solve each stage on the smallest model that&apos;s good enough, and escalate to a bigger one only when the quality gain beats the compute it costs.
           </p>
           {bench && (
             <div className="grid2" style={{ marginTop: 16 }}>
