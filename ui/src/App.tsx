@@ -16,8 +16,25 @@ export default function App() {
   const [bench, setBench] = useState<Benchmark | null>(null);
   const [board, setBoard] = useState<LeaderRow[]>([]);
   const [me, setMe] = useState<Session>("loading");
+  // per-row client-side proof: recover the grader signature over the stored receipt
+  const [checks, setChecks] = useState<Record<string, { ok: boolean; recovered: string; matches: boolean }>>({});
 
   const loadBoard = () => fetch(`${GRADER}/leaderboard`).then((r) => r.json()).then((d) => setBoard(d.leaderboard || [])).catch(() => {});
+
+  // Pull the enclave-signed submission, recover the signer in-browser, and confirm
+  // the board row (policy_hash + score) is exactly what the grader signed.
+  const verifyRow = async (r: LeaderRow) => {
+    setChecks((c) => ({ ...c, [r.submission_id]: { ok: false, recovered: "…", matches: false } }));
+    try {
+      const d = await fetch(`${GRADER}/submission/${r.submission_id}`).then((x) => x.json());
+      const v = verifyReceipt(d.receipt, d.signature, d.grader_address);
+      const rec = d.receipt as { policy_hash?: string; score?: number };
+      const matches = rec?.policy_hash === r.policy_hash && String(rec?.score) === String(r.score);
+      setChecks((c) => ({ ...c, [r.submission_id]: { ok: v.ok, recovered: v.recovered, matches } }));
+    } catch {
+      setChecks((c) => ({ ...c, [r.submission_id]: { ok: false, recovered: "unreachable", matches: false } }));
+    }
+  };
   useEffect(() => {
     fetch(`${GRADER}/benchmark`).then((r) => r.json()).then(setBench).catch(() => {});
     loadBoard();
@@ -147,7 +164,27 @@ export default function App() {
             {board.map((r) => (
               <div className={`lbrow ${r.rank === 1 ? "top1" : ""}`} key={r.submission_id}>
                 <span className="rk">#{r.rank}</span>
-                <div><div style={{ fontWeight: 500 }}>{r.participant}</div><div className="muted mono addr">policy {short(r.policy_hash)}</div></div>
+                <div>
+                  <div style={{ fontWeight: 500 }}>{r.participant}</div>
+                  <div className="muted mono addr">policy {short(r.policy_hash)}</div>
+                  {(() => {
+                    const c = checks[r.submission_id];
+                    if (!c) return (
+                      <button className="btn outline sm" style={{ marginTop: 6, fontSize: 11, padding: "2px 8px" }} onClick={() => verifyRow(r)}>
+                        verify signature
+                      </button>
+                    );
+                    if (c.recovered === "…") return <div className="mono muted" style={{ fontSize: 11, marginTop: 4 }}>verifying…</div>;
+                    const good = c.ok && c.matches;
+                    return (
+                      <div className="mono" style={{ fontSize: 11, marginTop: 4, color: good ? "#2f9e6b" : "var(--destructive)" }}>
+                        {good ? `✓ enclave-signed · grader ${short(c.recovered)}`
+                          : c.ok ? "✗ signed, but row ≠ receipt"
+                          : c.recovered === "unreachable" ? "✗ grader unreachable" : "✗ signature invalid"}
+                      </div>
+                    );
+                  })()}
+                </div>
                 <span className="mono" style={{ fontWeight: 700, fontSize: 16 }}>{r.score}</span>
               </div>
             ))}
