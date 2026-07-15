@@ -67,11 +67,12 @@ export default function App() {
       <main className="wrap">
         <section style={{ paddingTop: 64, borderTop: "none" }}>
           <div className="eyebrow">Attested routing benchmark · Intel TDX on EigenCompute</div>
-          <h1 className="hero-h">Can your router<br />beat the frontier?</h1>
+          <h1 className="hero-h">Can your router<br />ship it for less?</h1>
           <p className="lede" style={{ marginTop: 18 }}>
-            Write one function — <span className="mono">decide()</span>. An attested grader runs it against a
-            <b style={{ color: "var(--foreground)" }}> hidden</b> prompt set inside a TEE and
-            <b style={{ color: "var(--foreground)" }}> signs</b> your score. Highest quality per dollar, leaning on open models, wins — and every number on the board is cryptographically verifiable.
+            Write one function — <span className="mono">decide()</span>. An attested grader runs it across
+            <b style={{ color: "var(--foreground)" }}> hidden multi-stage engineering tasks</b> inside a TEE —
+            calling the models for real, judging the result, and <b style={{ color: "var(--foreground)" }}>signing</b> your score.
+            Best quality per unit of compute wins — and every number on the board is cryptographically verifiable.
           </p>
           <div style={{ display: "flex", gap: 10, marginTop: 24, flexWrap: "wrap" }}>
             <button className="btn indigo" onClick={() => go("participate")}>Participate →</button>
@@ -122,8 +123,9 @@ export default function App() {
           <h2>Sandboxed, hidden, and signed</h2>
           <div style={{ marginTop: 16, maxWidth: 760 }}>
             {[
-              ["Sandbox", "Your decide() runs under SES capability isolation in a worker thread inside the grader enclave — no fetch / fs / process, so it can't read or leak the hidden prompts, and a hang is killed by a timeout."],
-              ["Hidden set", "The prompts are sealed (KMS-encrypted, decrypt only in the enclave). You never see them, so you can't overfit — write a general rule, not per-prompt hacks."],
+              ["Sandbox", "Your decide() runs under SES capability isolation in a worker thread inside the grader enclave — no fetch / fs / process, so it can't read or leak the hidden tasks, and a hang is killed by a timeout."],
+              ["Live run + judge", "For each stage the grader calls your chosen model for real (OpenRouter), chains the outputs, then a fixed judge model scores the final result against a hidden rubric — all inside the enclave."],
+              ["Hidden tasks", "The tasks and rubrics are sealed (KMS-encrypted, decrypt only in the enclave). You never see them, so you can't overfit — write a general routing rule, not per-task hacks."],
               ["Attested score", "The grader signs { policy_hash, eval_set_hash, results_root, score } with a KMS-derived key that only exists inside the measured image. Recover the signer with ethers.verifyMessage — it matches the grader's on-chain Derived Address."],
               ["Verified identity", "Web submissions are gated behind Sign in with GitHub — your score is tied to your verified GitHub login, so nobody can claim the board as you."],
             ].map(([t, d], i) => (
