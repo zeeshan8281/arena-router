@@ -7,3 +7,6 @@ mine.json
 t.json
 npm-debug.log
 arena/hidden/
+
+# agent worktrees
+.claude/worktrees/
