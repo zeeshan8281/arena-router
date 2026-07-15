@@ -30,40 +30,41 @@ You pick *which* models to consider and *how* to combine them (the looper). The 
 - **You may only route to catalog models.** Returning an unknown model id scores that prompt 0.
 - Optional: you may also export `extractSignals(prompt)` to compute your own features; otherwise the default signals are provided.
 
-## 3. Models & the open-source incentive
+## 3. Models — all open, quality vs compute
 
-The catalog ([`config/catalog.json`](./config/catalog.json)) tags each model with a `tier` and `price_per_call`:
+Every model in the catalog ([`config/catalog.json`](./config/catalog.json)) is **open-source and free to call**. So there is no "pay for a proprietary model" choice — the tension is **quality vs compute**. Each model has a `tier` (capability class) and a `price_per_call` that is a **compute-cost proxy**: a bigger, stronger model costs more compute per call.
 
-| tier | example | price | open_source |
-|---|---|---|---|
-| `open-free` | `llama-3.3-70b:free`, `qwen2.5-7b:free` | 0 | ✓ |
-| `open-paid` | `mistral-large` | low | ✓ |
-| `proprietary` | `gpt-4o` | high | ✗ |
+| tier | example | compute cost |
+|---|---|---|
+| `tiny` | `llama-3.2-3b` | lowest |
+| `small` | `nemotron-nano-9b` | low |
+| `mid` | `gpt-oss-20b` | medium |
+| `code` | `qwen3-coder` | medium (code specialist) |
+| `large` | `llama-3.3-70b` | highest |
 
-Free/open models cost nothing **and** earn the openness bonus — so the competition actively promotes open and free models. The winning strategy is: **solve it on a free OSS model whenever it's good enough; only spend on proprietary when the quality gain is worth it.**
+The winning strategy: **solve it on the smallest model that's good enough; escalate to a bigger one only when the quality gain outweighs the compute it costs.**
 
 ## 4. Scoring
 
-For each prompt the grader runs your chosen looper, judges the final answer's quality `q ∈ [0,1]` (fixed judge model, temperature 0), and sums the `price_per_call` of every model the looper actually invoked (escalations and fan-outs cost more).
+For each prompt the grader runs your chosen looper, calls the routed model(s) live, judges the final answer's quality `q ∈ [0,1]` with a fixed paid judge model, and sums the `price_per_call` of every model the looper actually invoked (escalations and fan-outs cost more compute).
 
 Aggregated over `N` prompts:
 
 ```
-score = mean(quality)  −  λ · mean(cost)  +  β · oss_rate
+score = mean(quality)  −  λ · mean(cost)
 ```
 
 - `mean(quality)` — how good the answers are.
-- `mean(cost)` — average $ spent per prompt (free models = 0).
-- `oss_rate` — fraction of prompts whose *chosen* model is open-source.
-- `λ` (cost penalty) and `β` (openness bonus) are published in the catalog (`λ=4.0`, `β=0.15` on the dev set).
+- `mean(cost)` — average compute spent per prompt.
+- `λ` (cost penalty) is published in the catalog (`λ=4.0` on the dev set). The openness bonus `β` is `0` — every model is open, so there's nothing to differentiate on openness.
 
-Intuition: routing an easy prompt to a free OSS model gets full quality at zero cost **and** the openness bonus. Escalating a hard prompt to `gpt-4o` costs `λ·price` — worth it only if it lifts quality by more than that. That tension is the game.
+Intuition: routing an easy prompt to a `tiny` model gets near-full quality at minimal compute. Escalating a hard prompt to `large` costs `λ·price` — worth it only if it lifts quality by more than that. That tension is the game.
 
 ### Looper cost model
 - `single` — 1 call (`candidates[0]`).
 - `confidence` — call candidates in order; stop at the first whose confidence ≥ threshold; cost = calls made. Escalation only costs when it happens.
 - `ratings` — call all candidates; best answer wins; cost = sum of all.
-- `remom` — all candidates + an aggregator (`candidates[0]`); the aggregator IS the result, so quality/cost/openness attribute to it (no best-of-all bonus); highest cost.
+- `remom` — all candidates + an aggregator; small quality synergy; highest cost.
 
 ## 5. Local testing (before you submit)
 
@@ -81,14 +82,13 @@ Or load the **[autorouter skill](./skill/autorouter/SKILL.md)** and let Claude s
 
 ```jsonc
 ScoreReceipt {
-  version, submission_id, participant,
-  policy_hash,            // keccak256 of your canonical policy
-  eval_set_id, eval_set_hash,    // committed before the round; set revealed at close
-  catalog_hash, judge_model, scoring_params,   // { lambda, beta, threshold }
-  results_root,           // merkle root of per-prompt { id, chosen_model, quality, cost }
-  worker_attestations_root,      // every graded inference is itself worker-signed
-  mean_quality, mean_cost, oss_rate, score,
-  graded_at
+  version, submission_id, participant, note,
+  policy_hash,            // keccak256 of your canonical policy source
+  eval_set_hash,          // commits to the hidden tasks + rubrics; revealed at close
+  catalog_hash, grader_model, scoring_params,   // { lambda, beta, threshold }
+  n_prompts, results_root,   // keccak256 of per-prompt { id, chosen_model, quality, cost }
+  mean_quality, mean_cost, oss_rate, invalid, score,
+  grader_address, timestamp
 }
 // signed by the grader enclave key (a Derived Address on the Verifiability Dashboard)
 ```

@@ -1,13 +1,14 @@
 {
   "scoring": {
-    "cost_penalty_lambda": 4.0,
-    "openness_bonus_beta": 0.15,
+    "cost_penalty_lambda": 8.0,
+    "openness_bonus_beta": 0.0,
     "confidence_threshold": 0.6
   },
   "models": [
-    { "id": "qwen2.5-7b-instruct:free", "tier": "open-free", "open_source": true, "price_per_call": 0.0, "context": 32000 },
-    { "id": "llama-3.3-70b-instruct:free", "tier": "open-free", "open_source": true, "price_per_call": 0.0, "context": 128000 },
-    { "id": "mistral-large", "tier": "open-paid", "open_source": true, "price_per_call": 0.004, "context": 128000 },
-    { "id": "gpt-4o", "tier": "proprietary", "open_source": false, "price_per_call": 0.02, "context": 128000 }
+    { "id": "llama-3.2-3b",     "tier": "tiny",  "open_source": true, "price_per_call": 0.002, "context": 131072, "openrouter": "meta-llama/llama-3.2-3b-instruct" },
+    { "id": "qwen2.5-7b",       "tier": "small", "open_source": true, "price_per_call": 0.004, "context": 32768,  "openrouter": "qwen/qwen-2.5-7b-instruct" },
+    { "id": "mistral-small-24b","tier": "mid",   "open_source": true, "price_per_call": 0.008, "context": 128000, "openrouter": "mistralai/mistral-small-3.2-24b-instruct" },
+    { "id": "qwen3-coder",      "tier": "code",  "open_source": true, "price_per_call": 0.012, "context": 262144, "openrouter": "qwen/qwen3-coder" },
+    { "id": "llama-3.3-70b",    "tier": "large", "open_source": true, "price_per_call": 0.020, "context": 131072, "openrouter": "meta-llama/llama-3.3-70b-instruct" }
   ]
 }

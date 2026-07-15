@@ -6,24 +6,26 @@
 //    • You only pick models from `models`; the grader runs them for you.
 //    • Must return within the per-call timeout.
 //
-//  Goal: highest quality per dollar, and lean on open / free models.
-//    score = mean_quality − λ·mean_cost + β·oss_rate     (see COMPETITION.md)
-//    → free OSS models cost nothing AND earn the openness bonus, so use them
-//      whenever they're good enough; only spend on proprietary when it pays.
+//  Every model is open-source and free to call — so the game is QUALITY vs
+//  COMPUTE. price_per_call is a compute-cost proxy (bigger model = more).
+//    score = mean_quality − λ·mean_cost           (see COMPETITION.md)
+//    → route the smallest model that's good enough; escalate to a bigger one
+//      only when the extra quality outweighs the compute it costs.
 // ────────────────────────────────────────────────────────────────────────
 import type { PromptView, ModelCard, Decision } from "./types";
 
 export function decide(prompt: PromptView, models: ModelCard[]): Decision {
-  const freeOpen = models.filter((m) => m.open_source && m.price_per_call === 0).map((m) => m.id);
-  const strongest = models.find((m) => !m.open_source)?.id ?? models[models.length - 1].id;
+  // cheapest (smallest) → most expensive (largest) compute
+  const byCost = [...models].sort((a, b) => a.price_per_call - b.price_per_call);
+  const cheapest = byCost[0].id;
+  const ladder = byCost.map((m) => m.id);
 
-  // Hard prompt: start on a free model, escalate to a strong one only if the
-  // free answer isn't confident enough. You pay for the strong call only when
-  // the confidence looper actually escalates.
+  // Hard prompt: start cheap and escalate up the ladder only if the small
+  // model isn't confident. You pay for a bigger call only when it escalates.
   if (prompt.signals.complexity_band === "high" || prompt.signals.has_code) {
-    return { looper: "confidence", candidates: [...freeOpen, strongest] };
+    return { looper: "confidence", candidates: ladder };
   }
 
-  // Easy/medium: a free OSS model, single shot. Zero cost, full openness bonus.
-  return { looper: "single", candidates: [freeOpen[0] ?? models[0].id] };
+  // Easy/medium: smallest model, single shot. Lowest compute.
+  return { looper: "single", candidates: [cheapest] };
 }

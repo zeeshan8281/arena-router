@@ -10,10 +10,10 @@ Operate the `autorouter` CLI to compete in the AutoRouter Arena. The participant
 ## The objective (hold this in mind for every suggestion)
 
 ```
-score = mean(quality) − λ·mean(cost) + β·oss_rate
+score = mean(quality) − λ·mean(cost)
 ```
 
-Free/open models cost 0 **and** earn the openness bonus. Winning move: route to a **free open-source** model whenever it's good enough; only escalate to a paid/proprietary model when the quality gain beats `λ·price`. Never blindly send everything to the strongest model — it tanks cost and oss_rate.
+Every model is open-source and free to call, so the game is **quality vs compute**: `price_per_call` is a compute-cost proxy (bigger model = more). Winning move: solve each prompt on the **smallest model that's good enough**; only escalate to a bigger one when the quality gain beats `λ·price`. Never blindly send everything to the strongest model — it tanks the cost term.
 
 ## Setup
 
@@ -32,9 +32,9 @@ autorouter setup              # installs tsx (local scorer needs it)
 autorouter run [policy.ts]    # score locally on the PUBLIC dev set — the core loop
 ```
 
-`run` prints a per-prompt table (looper, chosen model, #calls, quality, cost, oss) and the SCORE. Read it for waste:
-- cheap prompt → paid model? move it to a free model.
-- hard prompt stuck on a free model with low quality? escalate (confidence looper with a strong model appended), but only if the quality gain beats the cost.
+`run` prints a per-prompt table (looper, chosen model, #calls, quality, compute cost) and the SCORE. Read it for waste:
+- easy prompt sent to a big model? move it to the smallest tier that still nails it.
+- hard prompt stuck on a small model with low quality? escalate (confidence looper with a bigger model appended), but only if the quality gain beats the compute.
 - using `ratings`/`remom`? they call multiple models — only justify on the hardest prompts.
 Re-run. Chase a higher SCORE, not just higher quality.
 
@@ -43,6 +43,8 @@ Re-run. Chase a higher SCORE, not just higher quality.
 ```bash
 autorouter submit [policy.ts] --note "what I changed"
 ```
+
+**Your policy must be your own.** The grader rejects any submission byte-identical to the shipped starter/example (comments and whitespace are normalized away, so you can't bypass it with a space) — actually change the routing logic in `decide()` first.
 
 The grader runs your policy against the **hidden** set inside a TEE and returns a **signed** score; the CLI verifies the signature against the grader's enclave address before printing it. Then:
 

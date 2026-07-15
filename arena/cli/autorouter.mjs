@@ -11,7 +11,7 @@ import { verifyMessage } from "ethers";
 const KIT = resolve(dirname(fileURLToPath(import.meta.url)), "..");   // arena/
 const CFG_DIR = join(homedir(), ".config", "autorouter");
 const CFG = join(CFG_DIR, "config.json");
-const DEFAULT_API = process.env.AUTOROUTER_API || "http://34.136.240.56:8080"; // live autorouter-grader (EigenCompute)
+const DEFAULT_API = process.env.AUTOROUTER_API || "http://34.7.20.95:8080"; // live autorouter-grader (EigenCompute)
 
 const cfg = () => (existsSync(CFG) ? JSON.parse(readFileSync(CFG, "utf8")) : {});
 const saveCfg = (c) => { mkdirSync(CFG_DIR, { recursive: true }); writeFileSync(CFG, JSON.stringify(c, null, 2)); };
@@ -80,7 +80,7 @@ switch (cmd) {
     const recovered = verifyMessage(canon(d.receipt), d.signature);
     const ok = recovered.toLowerCase() === d.grader_address.toLowerCase();
     console.log(`\n  SCORE      ${d.score}`);
-    console.log(`  quality    ${d.mean_quality}   cost $${d.mean_cost}   oss ${(d.oss_rate*100).toFixed(0)}%${d.invalid?`   invalid ${d.invalid}`:""}`);
+    console.log(`  quality    ${d.mean_quality}   compute $${d.mean_cost}${d.invalid?`   invalid ${d.invalid}`:""}`);
     console.log(`  submission ${d.submission_id}`);
     console.log(`  signature  ${ok ? "✓ signed by grader enclave " + recovered.slice(0,10)+"…" : "✗ SIGNATURE MISMATCH"}\n`);
     break;

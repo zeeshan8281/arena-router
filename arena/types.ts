@@ -16,9 +16,9 @@ export interface PromptView {
 
 export interface ModelCard {
   id: string;
-  tier: "open-free" | "open-paid" | "proprietary";
-  open_source: boolean;
-  price_per_call: number;                 // USD; open-free models are 0
+  tier: "tiny" | "small" | "mid" | "code" | "large";  // capability class — a routing hint
+  open_source: boolean;                   // every arena model is open; kept for future closed entrants
+  price_per_call: number;                 // COMPUTE-cost proxy (bigger model = more), the thing you minimize
   context: number;                        // max context tokens
 }
 
