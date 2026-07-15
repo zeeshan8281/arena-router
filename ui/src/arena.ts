@@ -31,20 +31,21 @@ export interface SubmitResult {
   receipt: unknown; signature: string; grader_address: string; error?: string;
 }
 
-// Starter policy shown in the editor. Free-first, escalate the hard ones.
+// Starter policy shown in the editor. Cheapest-first, escalate the hard ones.
 export const DEFAULT_POLICY = `import type { PromptView, ModelCard, Decision } from "./types";
 
-// Goal: high quality per dollar, lean on free/open models.
-//   score = mean_quality - λ·mean_cost + β·oss_rate
+// Every model is open + free to call — the game is quality vs compute.
+//   score = mean_quality - λ·mean_cost   (price_per_call = compute-cost proxy)
 export function decide(prompt: PromptView, models: ModelCard[]): Decision {
-  const freeOpen = models.filter(m => m.open_source && m.price_per_call === 0).map(m => m.id);
-  const strongest = models.find(m => !m.open_source)?.id ?? models[models.length - 1].id;
+  // cheapest (smallest) -> most expensive (largest) compute
+  const ladder = [...models].sort((a, b) => a.price_per_call - b.price_per_call).map(m => m.id);
 
-  // Hard prompt: start free, escalate to a strong model only if confidence is low.
+  // Hard prompt: start cheap and escalate up the ladder only if confidence is low.
+  // You pay for a bigger call only when it actually escalates.
   if (prompt.signals.complexity_band === "high" || prompt.signals.has_code) {
-    return { looper: "confidence", candidates: [...freeOpen, strongest] };
+    return { looper: "confidence", candidates: ladder };
   }
-  // Easy/medium: a free OSS model, single shot. Zero cost, full openness bonus.
-  return { looper: "single", candidates: [freeOpen[0] ?? models[0].id] };
+  // Easy/medium: smallest model, single shot. Lowest compute.
+  return { looper: "single", candidates: [ladder[0]] };
 }
 `;

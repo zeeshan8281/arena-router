@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 const SECRET = process.env.COOKIE_SECRET || "dev";
-const GRADER = process.env.GRADER_URL || "http://34.136.240.56:8080";
+const GRADER = process.env.GRADER_URL || "http://34.187.54.54:8080";
 function readSession(cookie?: string): { login: string } | null {
   const raw = (cookie || "").split(";").map((c) => c.trim()).find((c) => c.startsWith("arena_session="));
   if (!raw) return null;

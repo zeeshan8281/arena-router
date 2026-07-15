@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
-    { "source": "/grader/:path*", "destination": "http://34.136.240.56:8080/:path*" }
+    { "source": "/grader/:path*", "destination": "http://34.187.54.54:8080/:path*" }
   ]
 }

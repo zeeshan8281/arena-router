@@ -5,10 +5,10 @@ import {
 } from "./arena";
 
 // Reads (benchmark/leaderboard) → grader (via /grader proxy on Vercel, direct locally).
-const GRADER = import.meta.env.VITE_GRADER_BASE || "http://34.136.240.56:8080";
+const GRADER = import.meta.env.VITE_GRADER_BASE || "http://34.187.54.54:8080";
 const ON_VERCEL = Boolean(import.meta.env.VITE_GRADER_BASE);
 const REPO = "https://github.com/zeeshan8281/arena-router";
-const GRADER_DASH = "https://verify-sepolia.eigencloud.xyz/app/0xa2b59f7988Dc1611d5df3F1FcDf3080daa50d2De";
+const GRADER_DASH = "https://verify.eigencloud.xyz/app/0x6aA6Df01701e1bbDC4449E04dBe73282B731B6C3";
 
 type Session = { login: string | null; configured: boolean } | "local" | "loading";
 
@@ -69,31 +69,31 @@ export default function App() {
 
         <section id="benchmark">
           <div className="eyebrow">The benchmark</div>
-          <h2>Route smart, spend little, prefer open models</h2>
+          <h2>Route smart, spend little — across open models</h2>
           <p className="lede" style={{ marginTop: 12 }}>
             You pick which model handles each request and how (single, confidence-escalate, ratings, remom).
-            The grader runs it over {bench?.n_prompts ?? "N"} hidden prompts and scores:
+            Every model is open-source and free to call, so the game is <b>quality vs compute</b>.
+            The grader runs your policy over {bench?.n_prompts ?? "N"} hidden prompts and scores:
           </p>
-          <div className="term" style={{ margin: "16px 0", maxWidth: 520 }}>score = mean(quality) − λ·mean(cost) + β·oss_rate</div>
+          <div className="term" style={{ margin: "16px 0", maxWidth: 520 }}>score = mean(quality) − λ·mean(cost)</div>
           {p && (
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
               <span className="pill indigo">λ cost = {p.cost_penalty_lambda}</span>
-              <span className="pill indigo">β openness = {p.openness_bonus_beta}</span>
               <span className="pill">confidence threshold = {p.confidence_threshold}</span>
               <span className="pill">{bench!.n_prompts} hidden prompts</span>
             </div>
           )}
           <p className="muted" style={{ fontSize: 13.5, maxWidth: 720, lineHeight: 1.6 }}>
-            Free / open-source models cost 0 <b style={{ color: "var(--foreground)" }}>and</b> earn the openness bonus — so the
-            winning move is to solve it on a free OSS model whenever it&apos;s good enough, and only spend on a proprietary model when the quality gain beats the cost.
+            <code>price / call</code> is a <b style={{ color: "var(--foreground)" }}>compute-cost proxy</b> — a bigger, stronger model costs more.
+            The winning move is to solve each prompt on the smallest model that&apos;s good enough, and escalate to a bigger one only when the quality gain beats the compute it costs.
           </p>
           {bench && (
             <div className="grid2" style={{ marginTop: 16 }}>
               {bench.models.map((m) => (
                 <div className="node" key={m.id} style={{ minHeight: 0 }}>
-                  <div className="mono" style={{ fontSize: 12.5, fontWeight: 600 }}>{m.open_source ? "○ open" : "● proprietary"} · {m.id}</div>
+                  <div className="mono" style={{ fontSize: 12.5, fontWeight: 600 }}>○ open · {m.id}</div>
                   <div className="kv"><span className="muted">tier</span><span className="v">{m.tier}</span></div>
-                  <div className="kv"><span className="muted">price / call</span><span className="v mono">${m.price_per_call}</span></div>
+                  <div className="kv"><span className="muted">compute / call</span><span className="v mono">${m.price_per_call}</span></div>
                 </div>
               ))}
             </div>
@@ -240,7 +240,7 @@ function QuickTry({ me, onDone }: { me: Session; onDone: () => void }) {
       {res && (
         <div className={`banner ${res.verified ? "ok" : "bad"}`} style={{ marginTop: 12 }}>
           <b style={{ fontSize: 18 }}>{res.verified ? "✓" : "✗"}</b>
-          <div><div style={{ fontWeight: 700 }}>SCORE {res.score} · quality {res.mean_quality} · cost ${res.mean_cost} · oss {(res.oss_rate * 100).toFixed(0)}%</div>
+          <div><div style={{ fontWeight: 700 }}>SCORE {res.score} · quality {res.mean_quality} · compute ${res.mean_cost}{res.invalid ? ` · ${res.invalid} invalid` : ""}</div>
             <div className="mono" style={{ fontSize: 11 }}>{res.verified ? `signed by grader ${short(res.recovered)}` : "signature failed"}</div></div>
         </div>
       )}
