@@ -26,6 +26,27 @@ const STARTER_HASHES = new Set(
   (process.env.STARTER_POLICY_HASHES ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean),
 );
 
+// Identity: the leaderboard name is always the VERIFIED GitHub login. The grader
+// resolves it from a GitHub token itself, so no client can pick an arbitrary
+// name (browser, CLI, or curl). GITHUB_AUTH=off disables this for local dev.
+const GITHUB_AUTH = (process.env.GITHUB_AUTH ?? "on").toLowerCase() !== "off";
+const ghCache = new Map<string, string>(); // token → login (avoid re-hitting GitHub on resubmits)
+async function githubLogin(token: string): Promise<string | null> {
+  if (!token || token.length < 8) return null;
+  const cached = ghCache.get(token);
+  if (cached) return cached;
+  try {
+    const r = await fetch("https://api.github.com/user", {
+      headers: { authorization: `Bearer ${token}`, "user-agent": "autorouter-arena", accept: "application/vnd.github+json" },
+    });
+    if (!r.ok) return null;
+    const login = ((await r.json()) as { login?: string }).login;
+    if (!login || !/^[A-Za-z0-9-]+$/.test(login)) return null;
+    ghCache.set(token, login);
+    return login;
+  } catch { return null; }
+}
+
 function decodeJson<T>(name: string, raw?: string): T {
   if (!raw) throw new Error(`${name} is required`);
   try { return JSON.parse(raw) as T; }
@@ -78,11 +99,24 @@ app.get("/benchmark", (_req, res) => res.json({
   objective: "score = mean_quality - lambda*mean_cost + beta*oss_rate",
 }));
 
-// POST /submit { policy: "<TS source>", participant, note? }
+// POST /submit { policy: "<TS source>", github_token, note? }
+// The leaderboard name is ALWAYS the verified GitHub login (gh:<login>) — derived
+// from the token, never taken from the client. Set GITHUB_AUTH=off for local dev
+// (then it falls back to a client-supplied `participant`).
 app.post("/submit", async (req, res) => {
-  const { policy, participant, note } = req.body ?? {};
+  const { policy, participant, note, github_token } = req.body ?? {};
   if (typeof policy !== "string" || !policy.trim()) return res.status(400).json({ error: "policy (TS source) required" });
-  if (typeof participant !== "string" || !participant.trim()) return res.status(400).json({ error: "participant required" });
+
+  let who: string;
+  if (GITHUB_AUTH) {
+    const token = typeof github_token === "string" ? github_token : String(req.headers["x-github-token"] ?? "");
+    const login = await githubLogin(token);
+    if (!login) return res.status(401).json({ error: "GitHub sign-in required — submit through the site, or run `autorouter login` with a GitHub token" });
+    who = `gh:${login}`;                              // verified, ignore any client-supplied name
+  } else {
+    if (typeof participant !== "string" || !participant.trim()) return res.status(400).json({ error: "participant required" });
+    who = participant;
+  }
   if (STARTER_HASHES.has(hash(normalizePolicy(policy)).toLowerCase()))
     return res.status(400).json({ error: "This is an unmodified starter/example policy. Change the routing logic in decide() and resubmit — the same code can't be scored twice." });
 
@@ -99,7 +133,7 @@ app.post("/submit", async (req, res) => {
   const receipt = {
     version: "1",
     submission_id,
-    participant,
+    participant: who,
     note: typeof note === "string" ? note.slice(0, 200) : "",
     policy_hash: hash(policy),
     eval_set_hash: evalSetHash,
@@ -120,7 +154,7 @@ app.post("/submit", async (req, res) => {
   const signature = await wallet.signMessage(canonical);
 
   submissions.push({
-    submission_id, participant, note: receipt.note, score: receipt.score,
+    submission_id, participant: who, note: receipt.note, score: receipt.score,
     policy_hash: receipt.policy_hash, timestamp: receipt.timestamp,
     receipt, canonical, signature, rows: scored.rows,
   });

@@ -31,11 +31,16 @@ const canon = (v) => JSON.stringify((function s(x){ return Array.isArray(x)?x.ma
 const [cmd, ...args] = process.argv.slice(2);
 
 switch (cmd) {
-  case "login": {                                   // autorouter login <handle> [--api url]
-    const handle = args[0] || die("usage: autorouter login <handle> [--api <url>]");
-    const i = args.indexOf("--api");
-    const c = cfg(); c.participant = handle; if (i >= 0) c.api = args[i + 1];
-    saveCfg(c); console.log(`logged in as "${handle}" · grader ${api()}`); break;
+  case "login": {                                   // autorouter login <handle> [--api url] [--token gh_token]
+    const handle = args[0] || die("usage: autorouter login <handle> [--api <url>] [--token <github_token>]");
+    const ai = args.indexOf("--api"); const ti = args.indexOf("--token");
+    const c = cfg(); c.participant = handle;
+    if (ai >= 0) c.api = args[ai + 1];
+    if (ti >= 0) c.github_token = args[ti + 1];
+    saveCfg(c);
+    const tok = c.github_token || process.env.GITHUB_TOKEN;
+    console.log(`logged in · grader ${api()}${tok ? " · github token set" : "\n  ⚠ no GitHub token — needed to submit. re-run with --token <gh_token> (or set GITHUB_TOKEN). Your leaderboard name will be your verified GitHub login."}`);
+    break;
   }
   case "config":
     console.log(JSON.stringify({ api: api(), participant: me() }, null, 2)); break;
@@ -74,12 +79,15 @@ switch (cmd) {
     if (!existsSync(policyPath)) die(`no ${policyPath}`);
     const ni = args.indexOf("--note"); const note = ni >= 0 ? args[ni + 1] : "";
     const policy = readFileSync(policyPath, "utf8");
-    console.log(`submitting ${policyPath} as "${me()}" → ${api()} …`);
-    const d = await post("/submit", { policy, participant: me(), note });
+    const github_token = cfg().github_token || process.env.GITHUB_TOKEN || "";
+    if (!github_token) die("no GitHub token — run `autorouter login <handle> --token <gh_token>` (or set GITHUB_TOKEN). Your leaderboard name is your verified GitHub login.");
+    console.log(`submitting ${policyPath} → ${api()} …`);
+    const d = await post("/submit", { policy, note, github_token });
     // verify the signed score locally
     const recovered = verifyMessage(canon(d.receipt), d.signature);
     const ok = recovered.toLowerCase() === d.grader_address.toLowerCase();
-    console.log(`\n  SCORE      ${d.score}`);
+    console.log(`\n  participant ${d.receipt?.participant ?? "?"}   (verified GitHub login)`);
+    console.log(`  SCORE      ${d.score}`);
     console.log(`  quality    ${d.mean_quality}   compute $${d.mean_cost}${d.invalid?`   invalid ${d.invalid}`:""}`);
     console.log(`  submission ${d.submission_id}`);
     console.log(`  signature  ${ok ? "✓ signed by grader enclave " + recovered.slice(0,10)+"…" : "✗ SIGNATURE MISMATCH"}\n`);
@@ -108,7 +116,8 @@ switch (cmd) {
   default:
     console.log(`autorouter — AutoRouter Arena CLI
 
-  login <handle> [--api <url>]   set your identity + grader endpoint
+  login <handle> [--api <url>] [--token <gh_token>]   grader endpoint + GitHub token
+                                 (leaderboard name = your verified GitHub login)
   config                         show current config
   benchmark                      show the active benchmark (models, params, hidden-set hash)
   clone [dir]                    scaffold a policy workspace

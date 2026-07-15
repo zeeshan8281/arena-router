@@ -5,8 +5,10 @@ const CLIENT_ID = process.env.GITHUB_CLIENT_ID || "";
 const CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET || "";
 const SECRET = process.env.COOKIE_SECRET || "dev";
 
-function makeSession(login: string): string {
-  const body = Buffer.from(JSON.stringify({ login, exp: Date.now() + 7 * 86400000 })).toString("base64url");
+function makeSession(login: string, token: string): string {
+  // token kept server-side only (HttpOnly cookie) so /api/submit can prove the
+  // GitHub identity to the grader. read:user scope, never exposed to the client.
+  const body = Buffer.from(JSON.stringify({ login, token, exp: Date.now() + 7 * 86400000 })).toString("base64url");
   return `${body}.${createHmac("sha256", SECRET).update(body).digest("base64url")}`;
 }
 
@@ -24,7 +26,7 @@ export default async function handler(req: any, res: any) {
       headers: { authorization: `Bearer ${tok.access_token}`, "user-agent": "autorouter-arena" },
     }).then((r) => r.json());
     if (!user.login) throw new Error("no login");
-    res.setHeader("Set-Cookie", `arena_session=${encodeURIComponent(makeSession(user.login))}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=604800`);
+    res.setHeader("Set-Cookie", `arena_session=${encodeURIComponent(makeSession(user.login, tok.access_token))}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=604800`);
     res.redirect(302, `${APP_URL}/?auth=ok`);
   } catch {
     res.redirect(302, `${APP_URL}/?auth=error`);
