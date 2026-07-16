@@ -28,16 +28,22 @@
           "pass_count": { "type": "integer", "minimum": 0 },
           "n_errors": { "type": "integer", "minimum": 0 },
           "billed_usd": { "type": "number", "minimum": 0, "description": "OpenRouter ledger delta for this trial" },
-          "generation_ids": { "type": "array", "items": { "type": "string" } }
+          "generation_ids": { "type": "array", "items": { "type": "string" }, "description": "ledger audit trail (§7.1)" },
+          "input_tokens": { "type": "integer", "minimum": 0 },
+          "output_tokens": { "type": "integer", "minimum": 0 },
+          "cache_read_tokens": { "type": "integer", "minimum": 0 }
         }
       }
     },
     "median_pass_count": { "type": "number", "minimum": 0 },
     "median_billed_usd": { "type": "number", "minimum": 0 },
+    "openrouter_key_name": { "type": "string", "description": "the minted key's name; equals run_id" },
     "validity": {
       "type": "object",
       "properties": {
-        "byok_zero": { "type": "boolean" },
+        "byok_zero": { "type": "boolean", "description": "byok_usage == 0 (§6.1.6)" },
+        "models_allowlisted": { "type": "boolean", "description": "every generation record's model ∈ allowlist" },
+        "post_teardown_records": { "type": "boolean", "description": "late records after key deletion (§6.1.7)" },
         "voided": { "type": "boolean" },
         "void_reason": {}
       }

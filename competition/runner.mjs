@@ -14,7 +14,7 @@ import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadConfig, assertRunnable } from "./scoring/config.mjs";
-import { mintKey, keyStatus, deleteKey } from "./scoring/openrouter.mjs";
+import { mintKey, keyStatus, deleteKey, keyGenerations } from "./scoring/openrouter.mjs";
 import { parseHarborResult } from "./scoring/harbor-results.mjs";
 import { checkIntegrity } from "./scoring/integrity.mjs";
 import { budgetCheck, readRuns } from "./scoring/budget.mjs";
@@ -87,7 +87,8 @@ export async function runRun({ config, type, pr, author, submission, model, deps
         pass_count: parsed.passed,
         n_errors: parsed.n_errors,
         billed_usd: Number((c.usage - prevCost).toFixed(4)),
-        generation_ids: [], // TODO: collect from pi transcripts for per-gen allowlist enforcement
+        generation_ids: [],
+        input_tokens: 0, output_tokens: 0, cache_read_tokens: 0,
       });
       prevCost = c.usage;
     }
@@ -96,19 +97,37 @@ export async function runRun({ config, type, pr, author, submission, model, deps
   }
 
   const finalStatus = await deps.cost(hash).catch(() => ({ byok_usage: 0 }));
-  const integrity = checkIntegrity({
-    generations: [{ model: runModel }], // MVP: enforce the configured model; per-gen needs transcript IDs
-    keyStatus: finalStatus,
-    allowlist: config.models.allowlist,
-  });
 
+  // Pull the key's generation records — the authoritative per-record source for the
+  // allowlist check (spec §6.1.6 "every record's model ∈ allowlist"). Fall back to the
+  // configured model only if no lister is wired (keeps the check from silently passing).
+  const gens = deps.generations ? await deps.generations(hash).catch(() => null) : null;
+  const generations = gens ?? [{ model: runModel }];
+  const integrity = checkIntegrity({ generations, keyStatus: finalStatus, allowlist: config.models.allowlist });
+
+  // Attach the ledger audit trail. Per-trial attribution needs record timestamps (a
+  // follow-up); for single-trial runs (full/baseline, D14) the whole run IS trial[0].
+  if (gens && trials.length === 1) {
+    trials[0].generation_ids = gens.map((g) => g.id).filter(Boolean);
+    trials[0].input_tokens = gens.reduce((s, g) => s + (g.tokens_prompt || 0), 0);
+    trials[0].output_tokens = gens.reduce((s, g) => s + (g.tokens_completion || 0), 0);
+    trials[0].cache_read_tokens = gens.reduce((s, g) => s + (g.cache_read_tokens || 0), 0);
+  }
+
+  const offAllowlist = integrity.flags.some((f) => f.type === "off-allowlist" || f.type === "free-variant");
   const result = buildRunResult({
     runId: keyName(type, pr), runType: type, pr, author,
     entryName: deps.entryName, submissionSha: deps.submissionSha,
     piVersion: config.pi.version, configSha: deps.configSha,
     startedAt: deps.startedAt, finishedAt: deps.now?.(),
     trials,
-    validity: { byok_zero: (finalStatus.byok_usage ?? 0) === 0, voided: integrity.void, void_reason: integrity.void ? integrity.flags : null },
+    validity: {
+      byok_zero: (finalStatus.byok_usage ?? 0) === 0,
+      models_allowlisted: !offAllowlist,
+      post_teardown_records: false, // set by the T+30 re-check job (§6.1.7) when wired
+      voided: integrity.void,
+      void_reason: integrity.void ? integrity.flags : null,
+    },
     anomalyFlags: integrity.flags.filter((f) => f.severity !== "void"),
   });
 
@@ -132,6 +151,7 @@ function liveDeps({ mgmt, outRoot }) {
     mint: (name, cap) => mintKey(mgmt, name, cap),
     del: (hash) => deleteKey(mgmt, hash),
     cost: async (hash) => { const s = await keyStatus(mgmt, hash); return { usage: s.usage, byok_usage: s.byok_usage }; },
+    generations: (hash) => keyGenerations(mgmt, hash),
     runTrial: (key, { tasks, model, submission, trialIndex }) => {
       const outDir = join(outRoot, `trial-${trialIndex}`);
       const args = harborArgs({ dataset: loadConfig().benchmark.dataset, tasks, submission, model, outDir, concurrency: loadConfig().benchmark.concurrency });

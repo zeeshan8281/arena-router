@@ -33,6 +33,7 @@ export function buildRunResult({ runId, runType, pr, author, entryName, submissi
     trials,
     median_pass_count: median(passCounts),
     median_billed_usd: Number(median(costs).toFixed(4)),
+    openrouter_key_name: runId, // key name == run id (§6.1.3 / §7.1)
     validity: validity ?? { voided: false },
     anomaly_flags: anomalyFlags,
   };

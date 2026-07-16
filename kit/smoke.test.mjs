@@ -45,7 +45,7 @@ test("buildTrialArtifact joins pass vector with per-task transcript cost", () =>
   assert.equal(fg.cost_usd, 0.4);
 });
 
-test("runSmoke writes trial artifacts and medians", () => {
+test("runSmoke writes trial artifacts and medians (transcript cost fallback)", async () => {
   const out = mkdtempSync(join(tmpdir(), "smoke-out-"));
   const dirs = [
     fakeRunDir({ "fix-git": true }, { "fix-git": 0.4 }),
@@ -53,14 +53,30 @@ test("runSmoke writes trial artifacts and medians", () => {
     fakeRunDir({ "fix-git": true }, { "fix-git": 0.5 }),
   ];
   let i = 0;
-  const r = runSmoke({ key: "sk-or-x", trials: 3, tasks: ["fix-git"], outDir: out, spawn: () => dirs[i++] });
+  const r = await runSmoke({ key: "sk-or-x", trials: 3, tasks: ["fix-git"], outDir: out, spawn: () => dirs[i++] });
   assert.equal(r.trials.length, 3);
   assert.equal(r.median_pass, 1);
   assert.equal(r.median_cost, 0.5);
+  assert.equal(r.trials[0].cost_source, "transcript");
 });
 
-test("runSmoke refuses without a key", () => {
-  assert.throws(() => runSmoke({ trials: 1, tasks: [], outDir: "/tmp/x", spawn: () => "/x" }), /OPENROUTER_API_KEY/);
+test("runSmoke uses the key's usage ledger when a usage reader is provided", async () => {
+  const out = mkdtempSync(join(tmpdir(), "smoke-led-"));
+  // transcript says 0.4, but the ledger delta says 0.9 — ledger must win
+  const dir = fakeRunDir({ "fix-git": true }, { "fix-git": 0.4 });
+  const usageSeq = [1.0, 1.9]; // before, after
+  let u = 0;
+  const r = await runSmoke({
+    key: "sk-or-x", trials: 1, tasks: ["fix-git"], outDir: out,
+    spawn: () => dir, usage: async () => ({ usage: usageSeq[u++] }),
+  });
+  assert.equal(r.trials[0].billed_usd, 0.9); // ledger delta, not transcript 0.4
+  assert.equal(r.trials[0].cost_source, "ledger");
+  assert.equal(r.median_cost, 0.9);
+});
+
+test("runSmoke refuses without a key", async () => {
+  await assert.rejects(() => runSmoke({ trials: 1, tasks: [], outDir: "/tmp/x", spawn: () => "/x" }), /OPENROUTER_API_KEY/);
 });
 
 test("reportDeltas shows change vs previous run", () => {

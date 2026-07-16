@@ -76,6 +76,34 @@ test("budget-exhausted → void before any key mint", async () => {
   assert.equal(minted, false);
 });
 
+test("per-record allowlist: a real generation off the allowlist voids; clean sets audit trail", async () => {
+  const c = frozenConfig();
+  // clean run — two allowlisted records → models_allowlisted true, trial[0] gets the audit trail
+  const cleanDeps = {
+    allTasks: ["x"], priorRuns: [], now: () => "t", startedAt: "t",
+    mint: async () => ({ key: "k", hash: "h" }), del: async () => {},
+    cost: async () => ({ usage: 3.0, byok_usage: 0 }),
+    runTrial: async () => harborResult({ "fix-git": true }),
+    generations: async () => [
+      { id: "gen-1", model: "z-ai/glm-5.2", tokens_prompt: 1000, tokens_completion: 200, cache_read_tokens: 50 },
+      { id: "gen-2", model: "z-ai/glm-5.2", tokens_prompt: 500, tokens_completion: 100, cache_read_tokens: 0 },
+    ],
+  };
+  const ok = await runRun({ config: c, type: "full", pr: 3, author: "alice", model: "z-ai/glm-5.2", deps: cleanDeps });
+  assert.equal(ok.validity.voided, false);
+  assert.equal(ok.validity.models_allowlisted, true);
+  assert.deepEqual(ok.trials[0].generation_ids, ["gen-1", "gen-2"]);
+  assert.equal(ok.trials[0].input_tokens, 1500);
+  assert.equal(ok.trials[0].output_tokens, 300);
+  assert.equal(ok.openrouter_key_name, "pr3-full-a1");
+
+  // one off-allowlist record → void, even though we told pi to use an allowlisted model
+  const cheatDeps = { ...cleanDeps, generations: async () => [{ id: "g", model: "openai/gpt-5", tokens_prompt: 1 }] };
+  const bad = await runRun({ config: c, type: "full", pr: 4, author: "alice", model: "z-ai/glm-5.2", deps: cheatDeps });
+  assert.equal(bad.validity.voided, true);
+  assert.equal(bad.validity.models_allowlisted, false);
+});
+
 test("off-allowlist model voids the run", async () => {
   const c = frozenConfig();
   const deps = {

@@ -9,6 +9,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadConfig } from "../competition/scoring/config.mjs";
 import { runChecks } from "../competition/anti-abuse/checks.mjs";
+import { selfKeyUsage } from "../competition/scoring/openrouter.mjs";
 import { runSmoke, summarizeRun, reportDeltas } from "./smoke.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -65,7 +66,8 @@ function harborSpawn(root, config, model, submission) {
   };
 }
 
-/** Run the smoke set locally with the participant's own key (§6.5). */
+/** Run the smoke set locally with the participant's own key (§6.5). Cost comes from the
+ *  key's own usage ledger (selfKeyUsage), not pi's self-report. */
 export function smokeCmd({ trials, tasks, model, submission, outDir, root = REPO_ROOT } = {}) {
   const config = loadConfig(join(root, "competition.toml"));
   const runOut = outDir ?? join(root, ".arena", "out", "latest");
@@ -76,6 +78,7 @@ export function smokeCmd({ trials, tasks, model, submission, outDir, root = REPO
     tasks: tasks ?? config.smoke.tasks,
     outDir: runOut,
     spawn: harborSpawn(root, config, m, submission),
+    usage: (key) => selfKeyUsage(key),
   });
 }
 
@@ -101,7 +104,7 @@ const HELP = `arena — harness-efficiency kit
   arena smoke [--trials N] [--tasks a,b] [--out dir]   run the smoke set (needs OPENROUTER_API_KEY)
   arena report [--out dir]           show latest cost/pass table`;
 
-function main(argv) {
+async function main(argv) {
   const [cmd, ...rest] = argv.slice(2);
   const get = (f, d) => { const i = rest.indexOf(f); return i >= 0 ? rest[i + 1] : d; };
   try {
@@ -113,7 +116,7 @@ function main(argv) {
       case "smoke": {
         if (!process.env.OPENROUTER_API_KEY) { console.error("set OPENROUTER_API_KEY (your own inference key) to run a local smoke"); process.exit(2); }
         const tasksArg = get("--tasks"); const trialsArg = get("--trials");
-        const r = smokeCmd({
+        const r = await smokeCmd({
           trials: trialsArg ? Number(trialsArg) : undefined,
           tasks: tasksArg ? tasksArg.split(",").map((s) => s.trim()) : undefined,
           model: get("--model"), submission: get("--submission"), outDir: get("--out"),

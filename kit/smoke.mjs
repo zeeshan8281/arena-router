@@ -52,13 +52,23 @@ export function buildTrialArtifact(runDir, trialIndex) {
  * Run the smoke set locally. `spawn(key, {tasks, trialIndex, outDir}) -> runDir` is injected
  * (the CLI passes the real Harbor spawn). Returns { trials, median_pass, median_cost }.
  */
-export function runSmoke({ key, trials = 3, tasks, outDir, spawn }) {
+export async function runSmoke({ key, trials = 3, tasks, outDir, spawn, usage }) {
   if (!key) throw new Error("OPENROUTER_API_KEY required for a smoke run");
   mkdirSync(outDir, { recursive: true });
   const arts = [];
   for (let i = 0; i < trials; i++) {
-    const runDir = spawn(key, { tasks, trialIndex: i, outDir });
+    // Ledger cost = the participant key's own usage delta over the trial (spec §6.5:
+    // "billed dollars from the participant's own generation records" — not self-report).
+    const before = usage ? (await usage(key)).usage : null;
+    const runDir = await spawn(key, { tasks, trialIndex: i, outDir });
     const art = buildTrialArtifact(runDir, i);
+    if (usage) {
+      const after = (await usage(key)).usage;
+      art.billed_usd = Number((after - before).toFixed(6)); // ledger delta overrides transcript
+      art.cost_source = "ledger";
+    } else {
+      art.cost_source = "transcript"; // fallback: pi self-report (local-iteration only)
+    }
     writeFileSync(join(outDir, `trial-${i}.json`), JSON.stringify(art, null, 2) + "\n");
     arts.push(art);
   }

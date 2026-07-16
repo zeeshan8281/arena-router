@@ -46,6 +46,37 @@ export async function generation(inferenceKey, id) {
   return { id, model: d.model, total_cost: Number(d.total_cost) || 0, tokens_prompt: d.tokens_prompt, tokens_completion: d.tokens_completion, cache_discount: d.cache_discount };
 }
 
+/** List ALL generation records billed to a minted key (spec §6.1.5 "pull the key's
+ *  generation records"). This is the authoritative per-record source for the allowlist
+ *  + anomaly checks — one call, no per-id lookups, no transcript gen-ids needed.
+ *  VERIFY: endpoint path + record field names against a live management key. */
+export async function keyGenerations(mgmt, keyHash) {
+  const r = await fetch(`${BASE}/generations?key_hash=${encodeURIComponent(keyHash)}`, {
+    headers: { authorization: `Bearer ${mgmt}` },
+  });
+  if (!r.ok) throw new Error(`keyGenerations ${keyHash} → ${r.status}`);
+  const rows = (await r.json()).data ?? [];
+  return rows.map((d) => ({
+    id: d.id,
+    model: d.model,
+    total_cost: Number(d.total_cost) || 0,
+    tokens_prompt: Number(d.tokens_prompt) || 0,
+    tokens_completion: Number(d.tokens_completion) || 0,
+    cache_read_tokens: Number(d.cache_discount ? d.native_tokens_cached : d.tokens_cached) || 0,
+    byok: Boolean(d.is_byok),
+  }));
+}
+
+/** Billed usage of the CALLING inference key (spec §6.5: the participant's own ledger).
+ *  Lets `arena smoke` report ledger cost without a management key.
+ *  VERIFY: `/key` response shape against a live inference key. */
+export async function selfKeyUsage(inferenceKey) {
+  const r = await fetch(`${BASE}/key`, { headers: { authorization: `Bearer ${inferenceKey}` } });
+  if (!r.ok) throw new Error(`selfKeyUsage → ${r.status}`);
+  const d = (await r.json()).data ?? {};
+  return { usage: Number(d.usage) || 0, limit: d.limit, limit_remaining: d.limit_remaining };
+}
+
 /** One-shot lifecycle helper for CI: mint → hand key to `runFn(key)` → read
  *  billed cost → delete (always). Returns { cost_usd, byok_usage, result }. */
 export async function withCappedKey(mgmt, name, limitUsd, runFn) {
