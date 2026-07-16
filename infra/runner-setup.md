@@ -102,6 +102,16 @@ The loop is idempotent — re-running only pulls changed layers. Run it after
 first provisioning and after any `image_tag` bump. The cache survives across
 runs because it lives in the host daemon, not in ephemeral runner work dirs.
 
+**Node runtime in task images (SEC M7).** `agent/install-pi.sh.j2` installs a
+Node runtime at task-setup time by fetching nvm from `raw.githubusercontent.com`
+and the Node tarball from `nodejs.org`. Those two hosts are allowlisted in
+`squid.conf` **as install-time-only** so the install path works behind the
+enforcing proxy. **Preferred:** pre-bake Node 22 into the pinned eval images so
+the runtime `curl … | bash` drops off the critical path entirely — then the
+install script only runs `npm install -g /installed-agent/pi.tgz` (whose deps
+come from `registry.npmjs.org`) and the nvm/nodejs.org allowlist entries can be
+removed. Track this with the `image_tag` bump procedure below.
+
 ## 5. squid proxy
 
 squid comes up as part of `docker compose up -d` (§3). It is the sole egress
@@ -146,6 +156,16 @@ The security property is topological, not enforced by a firewall:
 - Task containers run on an **internal-only Docker network**
   (`internal: true`) that has **no route out**. Their only reachable off-box
   peer is squid (the dual-homed proxy).
+- **The runner itself is on the same internal-only network (SEC C2c).** It is
+  NOT on the egress bridge. It holds the key-minting `OPENROUTER_MANAGEMENT_KEY`
+  and `RESULTS_BOT_TOKEN` and runs `runner.mjs` from the PR merge ref, so it is
+  attacker-influenced; giving it an unrestricted bridge would let a compromised
+  runner exfiltrate those secrets to any host and bypass the squid allowlist
+  entirely. Instead it egresses ONLY through squid via
+  `HTTP(S)_PROXY=http://squid:3128` (set in `docker-compose.yml`), with
+  `NO_PROXY` covering loopback/squid/the Docker socket. github.com and the
+  Actions control-plane hosts are allowlisted (see `squid.conf`), so
+  registration, job polling, and log streaming still work.
 - squid forwards **only** allowlisted CONNECT hosts and denies everything else
   (`http_access deny all`).
 - Therefore a harness that **ignores the proxy env vars gets no connectivity at
@@ -160,6 +180,33 @@ The security property is topological, not enforced by a firewall:
 - **Anthropic is not on the allowlist.** The judge never runs inside eval — it
   only reads the PR diff via the GitHub API in a separate `pull_request_target`
   job (§3). Inference inside eval is OpenRouter-only.
+
+### Defense-in-depth, not the primary RCE control (SEC C2c / M6)
+
+The network lockdown above is a **backstop**. The primary control against a
+malicious submission exfiltrating the management key is architectural and lives
+outside this box:
+
+- **Runner should not execute untrusted PR code with secrets in scope.** The
+  smoke/full jobs currently check out `refs/pull/<n>/merge` (the full merged
+  tree, including the PR's copy of `competition/runner.mjs`) on a runner that
+  holds `OPENROUTER_MANAGEMENT_KEY`. The robust design is for `runner.mjs` to run
+  from a **trusted base checkout** and overlay ONLY `submissions/<author>/` from
+  the PR — never executing PR-authored harness/tooling. **Cross-file dependency
+  (runner agent):** implement the base-checkout + submission-overlay in
+  `competition/runner.mjs` and adjust `smoke.yml`/`full-run.yml` to check out the
+  base ref for tooling and fetch only the submission dir. Until that lands, the
+  squid egress cap is the mitigation that keeps a compromised runner from
+  reaching arbitrary hosts.
+- **Key scope + isolation (SEC M6).** `openrouter.ai` also serves the
+  key-provisioning API (`/api/v1/keys`), and CONNECT-hostname allowlisting cannot
+  separate inference from key-minting (the path is inside the TLS tunnel). So the
+  controls that actually matter are: the per-run `OPENROUTER_API_KEY` injected
+  into task containers is a **capped inference key with no provisioning scope**,
+  and the `OPENROUTER_MANAGEMENT_KEY` is held **only by `runner.mjs` in the
+  trusted runner step** and is **never** injected into a task container. Confirm
+  both invariants in `runner.mjs`. See the loud comment on the `openrouter.ai`
+  line in `squid.conf`.
 
 ## 7. Operational notes
 

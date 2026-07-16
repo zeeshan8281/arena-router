@@ -12,6 +12,8 @@ export interface LeaderRow {
   entry_name?: string | null;
   pass: number;
   cost_usd: number;
+  // Mirrors the on-disk leaderboard schema; ranked vs below_bar is already split by the
+  // pipeline so the UI keys off which array a row is in rather than this flag.
   qualified?: boolean;
   run_id?: string;
 }

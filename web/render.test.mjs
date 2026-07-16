@@ -42,3 +42,28 @@ test("voided run shows VOID badge", () => {
   const html = renderRun({ run_id: "x", validity: { voided: true, void_reason: "byok" }, trials: [] });
   assert.match(html, /VOID/);
 });
+
+const XSS = '<img src=x onerror=alert(1)>';
+
+test("leaderboard escapes hostile participant/entry/rank through full render", () => {
+  const html = renderLeaderboard({
+    eligibility_bar: 40,
+    baseline: { pass: 40, cost_usd: 8 },
+    ranked: [{ rank: XSS, participant: XSS, entry_name: XSS, pass: 41, cost_usd: 3 }],
+    below_bar: [{ participant: XSS, entry_name: XSS, pass: 30 }],
+  });
+  assert.doesNotMatch(html, /<img/, "raw <img must not survive into leaderboard HTML");
+  assert.match(html, /&lt;img/, "hostile markup must be entity-escaped");
+});
+
+test("run detail escapes hostile fields (task names, author, void_reason) through full render", () => {
+  const html = renderRun({
+    run_id: XSS, run_type: XSS, author: XSS, pi_version: XSS,
+    median_pass_count: 1, median_billed_usd: 1,
+    trials: [{ pass_vector: { [XSS]: true } }],
+    validity: { voided: true, void_reason: XSS },
+    anomaly_flags: [],
+  });
+  assert.doesNotMatch(html, /<img/, "raw <img must not survive into run HTML");
+  assert.match(html, /&lt;img/, "hostile markup must be entity-escaped");
+});

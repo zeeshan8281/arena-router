@@ -15,14 +15,41 @@ import { scan } from "./tripwire.mjs";
 
 const SUB = /^submissions\/([^/]+)\//;
 
-/** File paths touched by a unified diff (added, modified, or deleted). */
+/**
+ * File paths touched by a unified diff (added, modified, or deleted).
+ *
+ * C2a: git renders binary changes as `Binary files a/<p> and b/<p> differ` with NO
+ * +++/--- header. Parsing only text hunks made binary files invisible to path
+ * containment / the vendor guard / size caps — letting e.g. a backdoored
+ * `vendor/pi/pi.tgz` or answers in a `.bin` slip past every static check. We now
+ * parse the binary sentinel too so those paths are subject to the same guards.
+ */
 export function changedFiles(diff) {
   const files = new Set();
   for (const line of diff.split("\n")) {
     const m = line.match(/^(?:\+\+\+|---) [ab]\/(.+)$/);
-    if (m && m[1] !== "/dev/null") files.add(m[1].trim());
+    if (m && m[1] !== "/dev/null") { files.add(m[1].trim()); continue; }
+    // `Binary files a/foo and b/foo differ` (or `.../dev/null` on add/delete).
+    const b = line.match(/^Binary files (?:a\/)?(.+?) and (?:b\/)?(.+) differ$/);
+    if (b) {
+      for (const p of [b[1].trim(), b[2].trim()]) if (p && p !== "/dev/null") files.add(p);
+    }
   }
   return [...files];
+}
+
+/** Best-effort submission size: file count + total bytes of ADDED text lines.
+ *  Binary blobs never contribute bytes here (they aren't in a text diff), which is
+ *  fine now that binaries are blocked outside submissions/ and under vendor/ (C2a). */
+export function diffSize(diff, files = changedFiles(diff)) {
+  let totalBytes = 0;
+  for (const line of diff.split("\n")) {
+    // added content only: `+...` but not the `+++ ` file header.
+    if (line.startsWith("+") && !line.startsWith("+++ ")) {
+      totalBytes += Buffer.byteLength(line.slice(1), "utf8");
+    }
+  }
+  return { fileCount: files.length, totalBytes };
 }
 
 /** The single submission author a PR touches, or null if none / more than one. */
@@ -58,6 +85,11 @@ export function validateManifest(text, author) {
   return { ok: true };
 }
 
+// competition.toml [submission] defaults, mirrored here because config.mjs is owned by
+// another agent. Cross-file dependency: if these ever diverge from competition.toml
+// (max_files=200, max_bytes=1048576) they should be read from parseToml instead.
+export const SIZE_LIMITS = { maxFiles: 200, maxBytes: 1048576 };
+
 /** §4.2.5 — size caps. */
 export function sizeCheck({ fileCount, totalBytes }, { maxFiles = 200, maxBytes = 1048576 } = {}) {
   if (fileCount > maxFiles) return { ok: false, reason: "too-many-files", detail: `${fileCount} > ${maxFiles}` };
@@ -77,6 +109,11 @@ export function runChecks(diff, opts = {}) {
   const path = pathContainment(files, author);
   if (!path.ok) return { block: true, reason: path.reason, author, findings: [path] };
 
+  // §4.2.5 — file/byte DoS cap (H6: previously dead, sizeCheck was never called).
+  const limits = opts.limits ?? SIZE_LIMITS;
+  const size = sizeCheck(diffSize(diff, files), limits);
+  if (!size.ok) return { block: true, reason: size.reason, author, findings: [size] };
+
   if (opts.manifestText != null) {
     const man = validateManifest(opts.manifestText, author);
     if (!man.ok) return { block: true, reason: man.reason, author, findings: [man] };
@@ -95,8 +132,16 @@ function main(argv) {
   const json = args.includes("--json");
   const diffFile = get("--diff");
   const diff = diffFile ? readFileSync(diffFile, "utf8") : readFileSync(0, "utf8");
-  const author = get("--author");
-  const res = runChecks(diff, author ? { author } : {});
+  const author = get("--author") ?? deriveAuthor(changedFiles(diff));
+  // §5.1.2 wiring (H6): best-effort — if the derived author's manifest is on disk,
+  // validate it. When run from CI over a checkout this binds manifest author == PR
+  // author; when only a bare diff is available it's skipped (the manifest may not be
+  // in the diff at all). validateManifest remains callable/tested regardless.
+  let manifestText;
+  if (author) {
+    try { manifestText = readFileSync(`submissions/${author}/manifest.toml`, "utf8"); } catch { /* not on disk */ }
+  }
+  const res = runChecks(diff, { ...(author ? { author } : {}), ...(manifestText != null ? { manifestText } : {}) });
   if (json) console.log(JSON.stringify(res, null, 2));
   else console.log(res.block ? `BLOCK: ${res.reason}` : `OK (author=${res.author})`);
   process.exit(res.block ? 1 : 0);

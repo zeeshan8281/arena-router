@@ -5,6 +5,7 @@
 //
 //   node competition/scoring/results.mjs leaderboard [--runs <dir>] [--bar <N>] [--out <file>]
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -39,18 +40,48 @@ export function buildRunResult({ runId, runType, pr, author, entryName, submissi
   };
 }
 
-/** Write a run result to results/runs/<run-id>.json, best-effort minisign it. */
+// ---- H4: results integrity ----
+// The run files committed to main are the leaderboard's source of truth. readRuns /
+// generateLeaderboard currently TRUST those files as-is — there is no cryptographic
+// verification of authorship on read (signIfConfigured, below, is write-only and nothing
+// verifies the signature). The real guarantee that a PR cannot forge a favorable run is
+// enforced OUT OF BAND: CI must reject any PR that writes under results/runs/ (path
+// containment, owned by the CI agent). Only the trusted CI job may commit run files.
+//
+// As cheap in-band tamper-evidence we embed a `content_sha256` over the run's own body:
+// verifyRun() recomputes it and flags a file whose body no longer matches its recorded
+// digest (catches accidental/naive edits — NOT a forgery defense on its own, since an
+// attacker who can rewrite the body can recompute the digest; that's what the CI path
+// gate is for). A real signature scheme needs key infrastructure that isn't wired yet.
+
+/** sha256 over the run body with `content_sha256` excluded (stable, key-order independent). */
+export function hashRun(result) {
+  const { content_sha256, ...body } = result;
+  const canonical = JSON.stringify(body, Object.keys(body).sort());
+  return createHash("sha256").update(canonical).digest("hex");
+}
+
+/** Write a run result to results/runs/<run-id>.json with a content digest; best-effort minisign. */
 export function writeRun(runsDir, result) {
   mkdirSync(runsDir, { recursive: true });
-  const path = join(runsDir, `${result.run_id}.json`);
-  writeFileSync(path, JSON.stringify(result, null, 2) + "\n");
+  const stamped = { ...result, content_sha256: hashRun(result) };
+  const path = join(runsDir, `${stamped.run_id}.json`);
+  writeFileSync(path, JSON.stringify(stamped, null, 2) + "\n");
   signIfConfigured(path);
   return path;
 }
 
-// ponytail: signing is optional. Off unless RESULTS_SIGNING_KEY is set AND minisign is
-// on PATH — git history + OpenRouter generation IDs already make results auditable, so a
-// missing signer is a warning, not a failure. Drop entirely if never wired.
+/** Tamper-evidence check: true if the run has no digest (legacy) or its body still matches
+ *  the recorded content_sha256. Returns false only when a digest is present but stale. */
+export function verifyRun(result) {
+  if (!result || !result.content_sha256) return true; // no digest to verify against
+  return hashRun(result) === result.content_sha256;
+}
+
+// Signing is optional. Off unless RESULTS_SIGNING_KEY is set AND minisign is on PATH.
+// NOTE (H4): this only PRODUCES a .minisig alongside the file — nothing in readRuns /
+// generateLeaderboard verifies it, so it is not currently a trust boundary. Kept as a
+// forward hook; the actual integrity guarantee is the CI results/runs/ path gate above.
 function signIfConfigured(path) {
   const key = process.env.RESULTS_SIGNING_KEY;
   if (!key) return false;
@@ -70,12 +101,14 @@ export function generateLeaderboard(runs, { eligibilityBar }) {
 
   const bestByAuthor = new Map();
   for (const r of full) {
+    // `full` is already filtered to non-void runs above, so integrity is always clean here
+    // (void runs never reach the leaderboard). Passing integrity:null keeps that explicit.
     const entry = leaderboardEntry({
       participant: r.author,
       median_pass: r.median_pass_count,
       median_cost: r.median_billed_usd,
       baseline_pass: eligibilityBar,
-      integrity: r.validity?.voided ? { void: true, flags: r.validity } : null,
+      integrity: null,
     });
     entry.entry_name = r.entry_name;
     entry.run_id = r.run_id;

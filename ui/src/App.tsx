@@ -59,7 +59,7 @@ function BoardView({ onOpen }: { onOpen: (id: string) => void }) {
       </section>
 
       <h2>Ranked — cheapest qualifying harness wins</h2>
-      {lb.ranked.length ? (
+      {Array.isArray(lb.ranked) && lb.ranked.length ? (
         <table>
           <thead><tr><th>#</th><th>author</th><th>entry</th><th>passed</th><th className="num">billed&nbsp;$</th></tr></thead>
           <tbody>
@@ -68,7 +68,7 @@ function BoardView({ onOpen }: { onOpen: (id: string) => void }) {
         </table>
       ) : <p className="muted">No qualified entries yet.</p>}
 
-      {lb.below_bar.length > 0 && (
+      {Array.isArray(lb.below_bar) && lb.below_bar.length > 0 && (
         <>
           <h3>Below the bar</h3>
           <table>
@@ -118,7 +118,8 @@ function RunView({ id, onBack }: { id: string; onBack: () => void }) {
         <span className={`badge ${voided ? "void" : "ok"}`}>{voided ? "VOID" : "valid"}</span>
       </h2>
       <p className="muted">
-        author <b>{run.author}</b> · pi {run.pi_version ?? "?"} · passed <b>{run.median_pass_count}</b> ·
+        author <b>{run.author}</b>{run.entry_name ? <> · entry <b>{run.entry_name}</b></> : null} ·
+        pi {run.pi_version ?? "?"} · passed <b>{run.median_pass_count}</b> ·
         billed <b>{usd(run.median_billed_usd)}</b>
       </p>
       <div className="grid">

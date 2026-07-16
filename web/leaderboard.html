@@ -17,7 +17,12 @@
 <div id="app" class="empty">loading…</div>
 <script type="module">
   import { renderLeaderboard } from "./render.mjs";
-  const src = new URLSearchParams(location.search).get("src") || "../results/leaderboard.json";
+  // Only allow a same-origin relative path — reject absolute URLs, protocol-relative
+  // ("//host"), and scheme URIs (http:, data:, …) so ?src= can't render attacker-hosted
+  // content under the arena origin (content-spoofing/phishing).
+  const isSafeSrc = (s) => /^(\.\/|\.\.\/|\/)/.test(s) && !s.startsWith("//") && !/^[a-z][a-z0-9+.-]*:/i.test(s);
+  const raw = new URLSearchParams(location.search).get("src");
+  const src = raw && isSafeSrc(raw) ? raw : "../results/leaderboard.json";
   try {
     const lb = await (await fetch(src)).json();
     document.getElementById("app").innerHTML = renderLeaderboard(lb);

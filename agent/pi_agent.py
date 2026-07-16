@@ -55,24 +55,47 @@ class PiAgent(BaseInstalledAgent):
     def _install_agent_template_path(self) -> Path:
         return Path(__file__).parent / "install-pi.sh.j2"
 
+    @property
+    def _template_variables(self) -> dict[str, str]:
+        """Expose the expected tarball sha256 to install-pi.sh.j2 so the shell
+        path can independently `sha256sum -c` before `npm install` (SEC C2b —
+        defense in depth; the Python gate in _verify_vendored_pi is primary)."""
+        vars = dict(super()._template_variables)
+        vars["vendor_sha256"] = (os.environ.get("PI_VENDOR_SHA256") or "").strip()
+        return vars
+
     async def setup(self, environment: BaseEnvironment) -> None:
         """Upload the vendored pi tarball (checksum-gated) before the install script
-        runs, so install.sh can `npm install -g` from it with no registry fetch (D20)."""
+        runs, so install.sh can `npm install -g` from it with no registry fetch (D20).
+
+        Fail CLOSED: without a configured PI_VENDOR_TARBALL + PI_VENDOR_SHA256 we
+        refuse to proceed rather than install an unverified artifact (SEC C2b)."""
         tarball = os.environ.get("PI_VENDOR_TARBALL")
-        if tarball:
-            self._verify_vendored_pi(tarball)
-            await environment.exec(command="mkdir -p /installed-agent")
-            await environment.upload_file(
-                source_path=Path(tarball),
-                target_path=_CONTAINER_TARBALL,
+        if not tarball:
+            raise ValueError(
+                "PI_VENDOR_TARBALL is not set; refusing to run pi without a "
+                "checksum-verified vendored tarball (D20 / SEC C2b fail-closed)."
             )
+        self._verify_vendored_pi(tarball)
+        await environment.exec(command="mkdir -p /installed-agent")
+        await environment.upload_file(
+            source_path=Path(tarball),
+            target_path=_CONTAINER_TARBALL,
+        )
         await super().setup(environment)
 
     @staticmethod
     def _verify_vendored_pi(tarball: str) -> None:
-        expected = os.environ.get("PI_VENDOR_SHA256")
+        """Verify the vendored tarball against PI_VENDOR_SHA256. Fail CLOSED: a
+        missing/blank checksum RAISES rather than skipping the gate (SEC C2b) —
+        an unverified tarball must never reach `npm install -g`."""
+        expected = (os.environ.get("PI_VENDOR_SHA256") or "").strip()
         if not expected:
-            return  # no checksum configured -> skip (WP1 pins it in competition.toml)
+            raise ValueError(
+                "PI_VENDOR_SHA256 is not set; refusing to install an unverified "
+                "vendored pi tarball (D20 / SEC C2b fail-closed). Pin the sha256 "
+                "in the eval-runner env / competition.toml."
+            )
         actual = hashlib.sha256(Path(tarball).read_bytes()).hexdigest()
         if actual != expected:
             raise ValueError(

@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 # Node runtime (allowed: it's a runtime dep like python, not pi itself).
 apt-get update
@@ -9,9 +9,18 @@ export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 nvm install 22
 
-# D20: install pi from the vendored tarball ONLY. No npm-registry fetch of pi, so the
-# scored version can never drift from vendor/pi/. PiAgent.setup() uploaded + checksummed
-# it to /installed-agent/pi.tgz before this script runs.
+# D20 + SEC C2b: install pi from the vendored tarball ONLY, and verify it here
+# too (defense in depth). PiAgent.setup() already checksum-gated the tarball in
+# Python before uploading it to /installed-agent/pi.tgz; we re-verify in the
+# shell so the install path is fail-closed even if the upload path ever changes.
+# {{ vendor_sha256 }} is injected from PI_VENDOR_SHA256 by PiAgent._template_variables.
+EXPECTED_SHA256="{{ vendor_sha256 }}"
+if [ -z "$EXPECTED_SHA256" ]; then
+  echo "ERROR: no expected sha256 for vendored pi tarball; refusing to install (SEC C2b fail-closed)." >&2
+  exit 1
+fi
+echo "${EXPECTED_SHA256}  /installed-agent/pi.tgz" | sha256sum -c -
+
 npm install -g /installed-agent/pi.tgz
 
 pi --help

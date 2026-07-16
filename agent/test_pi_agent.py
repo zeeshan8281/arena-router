@@ -61,6 +61,15 @@ def test_install_template_is_vendored_only():
     assert "npm install -g /installed-agent/pi.tgz" in tpl   # D20: from vendored tarball
     assert "pi-coding-agent" not in tpl                      # no registry fetch of pi
     assert "@latest" not in tpl                              # no floating version
+    assert "sha256sum -c" in tpl                             # SEC C2b: shell re-verifies
+
+
+def test_install_template_verifies_sha256(tmp_path):
+    """SEC C2b: the rendered install script must checksum the tarball (fail-closed)
+    before npm install — and the sha comes from PiAgent._template_variables."""
+    a = _agent(tmp_path)
+    tvars = a._template_variables
+    assert "vendor_sha256" in tvars                           # exposed to the template
 
 
 def test_checksum_gate(tmp_path, monkeypatch):
@@ -77,8 +86,15 @@ def test_checksum_gate(tmp_path, monkeypatch):
     with pytest.raises(ValueError, match="checksum mismatch"):
         PiAgent._verify_vendored_pi(str(blob))
 
+    # SEC C2b: fail CLOSED. A missing OR blank checksum must RAISE, never skip —
+    # an unverified tarball must never reach `npm install -g`.
     monkeypatch.delenv("PI_VENDOR_SHA256", raising=False)
-    PiAgent._verify_vendored_pi(str(blob))  # unconfigured -> skip, no raise
+    with pytest.raises(ValueError, match="PI_VENDOR_SHA256 is not set"):
+        PiAgent._verify_vendored_pi(str(blob))
+
+    monkeypatch.setenv("PI_VENDOR_SHA256", "   ")  # blank/whitespace also fails closed
+    with pytest.raises(ValueError, match="PI_VENDOR_SHA256 is not set"):
+        PiAgent._verify_vendored_pi(str(blob))
 
 
 if __name__ == "__main__":

@@ -14,9 +14,19 @@
 #     http://squid:3128) AND on `egress` (a normal bridge with a route out).
 #     squid is the sole bridge between the two, and it only forwards allowlisted
 #     CONNECT hosts. Everything else fails closed.
-#   - The runner itself sits on `egress` (it must reach github.com to poll for
-#     jobs and stream logs). It does NOT sit on `internal`; task containers are
-#     isolated from it except through Harbor's Docker API usage.
+#   - The runner ALSO sits on `internal` only (SEC C2c). It holds
+#     OPENROUTER_MANAGEMENT_KEY (key-minting) + RESULTS_BOT_TOKEN and runs
+#     runner.mjs from the PR merge ref, so it is attacker-influenced. If it had
+#     an unrestricted bridge it could exfiltrate those secrets to any host,
+#     bypassing the entire squid allowlist. Instead it egresses ONLY through
+#     squid via HTTPS_PROXY/HTTP_PROXY=http://squid:3128 (github.com is on the
+#     allowlist so job polling/log streaming still works), and has no direct
+#     default route out.
+#   - DEFENSE IN DEPTH: the network lockdown is a backstop, not the primary
+#     control. The primary control against RCE-driven key exfil is NOT running
+#     untrusted PR code as the runner (a CI/runner design property — see
+#     runner.mjs checkout-overlay note in runner-setup.md §6). This compose file
+#     does what it can at the network layer.
 #
 # NOTE ON RUNTIME TASK CONTAINERS: Harbor (invoked by runner.ts inside the
 # runner) creates the 89 task containers itself via the mounted Docker socket.
@@ -68,6 +78,22 @@ services:
       # Ephemeral so a job never inherits a dirty runner from a prior run.
       EPHEMERAL: "true"
       DISABLE_AUTO_UPDATE: "true"
+      # --- Egress lockdown (SEC C2c) ---------------------------------------
+      # The runner sits on the internal-only network with NO direct route out;
+      # its SOLE path off-box is squid. Point every standard proxy var at squid
+      # so the GH Actions agent (registration, job polling, log streaming, git,
+      # tool downloads) and runner.mjs all tunnel through the allowlist. squid
+      # resolves upstream DNS on the egress side, so the runner needs no direct
+      # DNS either. github.com is allowlisted (squid.conf), so polling works.
+      # A harness that clears these vars gets nothing — no proxy + no route =
+      # fail closed, exactly like the task containers.
+      HTTP_PROXY: "http://squid:3128"
+      HTTPS_PROXY: "http://squid:3128"
+      http_proxy: "http://squid:3128"
+      https_proxy: "http://squid:3128"
+      # Never proxy on-box/loopback traffic (Docker socket peers, squid itself).
+      NO_PROXY: "localhost,127.0.0.1,squid,::1"
+      no_proxy: "localhost,127.0.0.1,squid,::1"
     volumes:
       # Harbor (run by the workflow) needs the Docker API to create task
       # containers. Mounting the socket makes those containers siblings on this
@@ -78,7 +104,11 @@ services:
       # pre-pull script (runner-setup.md) warms the 89 pinned images once.
       - runner-work:/actions-runner/_work
     networks:
-      - egress   # reach github.com for job polling / log streaming
+      # SEC C2c: internal-only. The runner egresses solely via squid (see the
+      # HTTP(S)_PROXY env above); it has NO direct bridge to the internet, so a
+      # compromised runner cannot exfiltrate OPENROUTER_MANAGEMENT_KEY /
+      # RESULTS_BOT_TOKEN off the allowlist.
+      - internal
     depends_on:
       - squid
 
@@ -89,8 +119,10 @@ networks:
   internal:
     name: arena-internal
     internal: true
-  # Normal bridge with outbound route. Only squid (egress side) and the runner
-  # live here. Task containers must NEVER be attached to this network.
+  # Normal bridge with outbound route. ONLY squid (egress side) lives here — it
+  # is the sole bridge between `internal` and the internet. Neither the runner
+  # nor task containers may attach here (SEC C2c): everything else reaches the
+  # outside only by tunnelling through squid on the internal network.
   egress:
     name: arena-egress
     driver: bridge

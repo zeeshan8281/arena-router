@@ -14,7 +14,7 @@ export function renderLeaderboard(lb) {
     ? `<p class="baseline">Baseline (vanilla pi + GLM 5.2): <b>${esc(lb.baseline.pass)}</b> passed at <b>${usd(lb.baseline.cost_usd)}</b>. Eligibility bar: ${esc(lb.eligibility_bar)} passed.</p>`
     : `<p class="baseline">Baseline probe not yet run — eligibility bar unfrozen.</p>`;
   const row = (e) =>
-    `<tr><td>${e.rank ?? "—"}</td><td>${esc(e.participant)}</td><td>${esc(e.entry_name ?? "")}</td><td>${esc(e.pass)}</td><td class="cost">${usd(e.cost_usd)}</td></tr>`;
+    `<tr><td>${esc(e.rank ?? "—")}</td><td>${esc(e.participant)}</td><td>${esc(e.entry_name ?? "")}</td><td>${esc(e.pass)}</td><td class="cost">${usd(e.cost_usd)}</td></tr>`;
   const ranked = lb.ranked.length
     ? `<table><thead><tr><th>#</th><th>author</th><th>entry</th><th>passed</th><th>billed $</th></tr></thead><tbody>${lb.ranked.map(row).join("")}</tbody></table>`
     : `<p class="empty">No qualified entries yet.</p>`;

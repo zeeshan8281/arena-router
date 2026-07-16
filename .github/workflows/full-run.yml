@@ -12,7 +12,14 @@ on:
       author: { description: "PR author github login", required: true }
 
 # Org-wide single-slot: at most one full run anywhere at a time; others queue,
-# never cancel (spec §6.1.1 / §8 full.org_concurrency = 1).
+# never cancel (spec §6.1.1 / §8 full.org_concurrency = 1). The group is a fixed
+# literal ON PURPOSE — do NOT fold the PR/SHA in, or two PRs could run at once
+# and break the single-slot invariant.
+#
+# No double-dispatch (SEC M8): full-run is dispatched only by smoke.yml's
+# trigger-full job, and smoke now fires exactly once per push (single-event gate
+# — see smoke.yml DEDUP), so full-run is dispatched once per passing smoke. This
+# org-wide single slot then serializes anything that still slips through.
 concurrency:
   group: full-run
   cancel-in-progress: false

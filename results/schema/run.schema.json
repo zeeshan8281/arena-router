@@ -5,7 +5,22 @@
   "description": "Per-run results file (spec §7.1). Emitted by competition/scoring/results.mjs buildRunResult().",
   "type": "object",
   "required": ["schema_version", "run_id", "run_type", "author", "trials", "median_pass_count", "median_billed_usd", "validity"],
-  "additionalProperties": true,
+  "additionalProperties": false,
+  "$defs": {
+    "flag": {
+      "type": "object",
+      "description": "Integrity/anomaly flag emitted by scoring/integrity.mjs.",
+      "required": ["severity", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "severity": { "enum": ["void", "review"] },
+        "type": { "type": "string", "description": "byok | free-variant | off-allowlist | low-token-pass | …" },
+        "detail": { "type": "string" },
+        "task": { "type": "string" },
+        "tokens": { "type": "number", "minimum": 0 }
+      }
+    }
+  },
   "properties": {
     "schema_version": { "const": 1 },
     "run_id": { "type": "string", "description": "pr<n>-<smoke|full|baseline>-a<attempt>" },
@@ -23,6 +38,7 @@
       "items": {
         "type": "object",
         "required": ["pass_count", "billed_usd"],
+        "additionalProperties": false,
         "properties": {
           "pass_vector": { "type": "object", "additionalProperties": { "type": "boolean" } },
           "pass_count": { "type": "integer", "minimum": 0 },
@@ -40,15 +56,32 @@
     "openrouter_key_name": { "type": "string", "description": "the minted key's name; equals run_id" },
     "validity": {
       "type": "object",
+      "required": ["voided"],
+      "additionalProperties": false,
       "properties": {
         "byok_zero": { "type": "boolean", "description": "byok_usage == 0 (§6.1.6)" },
         "models_allowlisted": { "type": "boolean", "description": "every generation record's model ∈ allowlist" },
         "post_teardown_records": { "type": "boolean", "description": "late records after key deletion (§6.1.7)" },
         "voided": { "type": "boolean" },
-        "void_reason": {}
+        "void_reason": {
+          "description": "null when valid; a string for pre-run gates (e.g. monthly-budget-exhausted); the integrity flag list when integrity voided the run.",
+          "oneOf": [
+            { "type": "null" },
+            { "type": "string" },
+            { "type": "array", "items": { "$ref": "#/$defs/flag" } }
+          ]
+        }
       }
     },
-    "anomaly_flags": { "type": "array" },
-    "smoke_gate": { "type": "object" }
+    "anomaly_flags": { "type": "array", "items": { "$ref": "#/$defs/flag" } },
+    "smoke_gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pass": { "type": "boolean" },
+        "median_pass": { "type": "number", "minimum": 0 },
+        "threshold": { "type": "number" }
+      }
+    }
   }
 }
