@@ -1,0 +1,44 @@
+# Smoke gate — smoke-subset.md + ci-anti-abuse §1. Mints a $1.50-capped key,
+# runs the 16-task smoke set median-of-3 on vanilla pi + the submission, scores
+# pass count from the ledger, gates, deletes the key.
+#
+# SKELETON: manual-trigger only until harbor/pi are wired and secrets exist.
+# Real flow will be: pull_request (after guard) with a required-reviewers
+# environment holding the provisioning key. See ci-anti-abuse §2.
+name: smoke
+on:
+  workflow_dispatch:
+    inputs:
+      pr:    { description: "PR number", required: true }
+      model: { description: "OpenRouter model slug", required: true, default: "z-ai/glm-5.2" }
+      agent: { description: "harbor agent (submission harness)", required: true }
+
+concurrency: { group: "smoke-${{ github.event.inputs.pr }}", cancel-in-progress: false }
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    environment: benchmark            # required-reviewers gate holds OPENROUTER_MGMT_KEY
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+
+      # TODO: install harbor + pi, pin the Terminal-Bench 2.0 Verified / 2.1 image set.
+      # TODO: lock container egress to openrouter.ai + package registries (ci-anti-abuse §3b).
+
+      - name: Run smoke (mint capped key → harbor 16 median-of-3 → score → delete)
+        env:
+          OPENROUTER_MGMT_KEY: ${{ secrets.OPENROUTER_MGMT_KEY }}
+        run: |
+          node competition/ci/run-benchmark.mjs \
+            --set smoke --trials 3 --cap 1.50 \
+            --pr "${{ github.event.inputs.pr }}" \
+            --model "${{ github.event.inputs.model }}" \
+            --agent "${{ github.event.inputs.agent }}" \
+            --out /tmp/smoke.json
+          cat /tmp/smoke.json
+
+      # TODO: read median_pass, compare to the frozen gate threshold (baseline − 1),
+      #       set job status, and on pass dispatch full.yml (ci-anti-abuse §2 —
+      #       auto-trigger flagged; may become a `run-full-bench` maintainer label).
