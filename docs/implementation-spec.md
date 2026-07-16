@@ -62,11 +62,10 @@ leaderboard regenerated (static JSON) → web UI
 | D16 | Eligibility bar | full-run pass count ≥ `B_full` — frozen absolute after probe, no noise margin; rank eligible entries by lowest billed dollars |
 | D17 | Season rules | **out of scope** — spec the live leaderboard only; prizes/finalization designed later |
 | D18 | Egress enforcement | **HTTP(S) proxy allowlist** (squid, CONNECT-hostname rules) on an internal-only Docker network |
-| D19 | Stack | **Python** for pipeline + participant kit (Harbor/terminal-bench are Python); web UI stays TypeScript; boundary = static `results/` JSON |
+| D19 | Stack | **Node/TypeScript** for pipeline + participant kit, reusing the tested HTTP/JSON/git glue already in this codebase; **Python only where Harbor forces it** — the single agent-adapter file it loads via `--agent-import-path` (§6.2). Boundary = `harbor` subprocess + JSON artifacts. Web UI stays TypeScript; UI boundary = static `results/` JSON. *(Revised from all-Python: the only hard Python dependency is the adapter file — rewriting working Node glue for language uniformity is discarding tested code for no functional gain.)* |
 | D20 | pi version | **vendored into the repo** (`vendor/pi/`, current latest release at implementation time); any diff touching `vendor/` = automatic block |
 | D21 | Improvement-loop skill host | **agent-agnostic** — a `SKILL.md` playbook + kit CLI usable from any coding agent (Claude Code, pi, Codex); no host-specific affordances |
-| D22 | Skill autonomy | **budgeted autonomous loop** — participant sets a dollar/iteration budget upfront; skill iterates to budget or convergence, reports the trajectory |
-| D23 | Skill inner signal | **tiered**: free analysis of the last run's generation records + transcripts → single-trial smoke (~$1–3) for candidates → median-of-3 only for promising changes |
+| D22 | Skill scope | **minimal v1** — ship the load-bearing CLI (`arena smoke --trials 1 --tasks --out` + `arena report`) plus a one-page `SKILL.md` describing the loop (analyze → edit → cheap trial → confirm). Autonomy budgets, convergence detection, and trajectory machinery **deferred** until a participant actually wants them — it's dev tooling; it enforces nothing and scores nothing. *(Revised from a budgeted-autonomous-loop spec with R1–R6 requirements: iteration machinery designed before anyone has run a loop.)* |
 
 Supersessions of ci-anti-abuse.md: D11 removes the "first-timers need one human approval" step (§2 of that doc); D12 hardens judge `suspicious` from proceed-with-label to block.
 
@@ -91,20 +90,23 @@ arena-router/
 │   ├── runs/<run-id>.json        # one file per official CI run (§7.1)
 │   ├── runs/<run-id>.json.minisig
 │   └── leaderboard.json          # regenerated after every full run (§7.2)
-├── pipeline/                     # Python package: all CI orchestration (§3–§7)
-│   ├── pyproject.toml            # Python ≥3.12, managed with uv
-│   ├── arena_pipeline/
-│   │   ├── config.py             # competition.toml loader + validation
-│   │   ├── keys.py               # OpenRouter Provisioning API client
-│   │   ├── ledger.py             # generation-record pull, cost + validity
-│   │   ├── checks.py             # static checks + tripwire
-│   │   ├── judge.py              # Anthropic judge client + surfacing
-│   │   ├── pi_agent.py           # Harbor agent adapter for pi (§6.2)
-│   │   ├── runner.py             # smoke/full run orchestration
-│   │   ├── results.py            # results JSON, signing, leaderboard gen
-│   │   └── budget.py             # per-author monthly ledger
-│   └── tests/
-├── kit/                          # participant CLI (§6.5) — thin wrapper over arena_pipeline
+├── pipeline/                     # Node/TS package: all CI orchestration glue (§3–§7, D19)
+│   ├── package.json              # Node ≥22, TypeScript; reuses existing tested glue
+│   ├── src/
+│   │   ├── config.ts             # competition.toml loader + validation
+│   │   ├── keys.ts               # OpenRouter Provisioning API client
+│   │   ├── ledger.ts             # generation-record pull, cost + validity
+│   │   ├── checks.ts             # static checks + tripwire
+│   │   ├── judge.ts              # Anthropic judge client + surfacing
+│   │   ├── runner.ts             # smoke/full orchestration; spawns `harbor` subprocess
+│   │   ├── results.ts            # results JSON, signing, leaderboard gen
+│   │   └── budget.ts             # per-author monthly ledger
+│   ├── data/tripwire.txt
+│   └── test/
+├── agent/                        # the ONE forced-Python component (D19)
+│   ├── pyproject.toml            # Python ≥3.12, managed with uv; deps: harbor
+│   └── pi_agent.py               # Harbor agent adapter for pi (§6.2), loaded via --agent-import-path
+├── kit/                          # participant CLI (§6.5) — thin wrapper over pipeline/src
 │   └── skill/
 │       └── SKILL.md              # agent-agnostic improvement-loop skill (§6.6)
 ├── judge/
@@ -122,7 +124,7 @@ arena-router/
 └── docs/                         # this spec + companions
 ```
 
-**Teardown (D7/D8):** delete `src/router/`, the grader, backend-worker, attestation/receipt crypto, ring store, and their tests/scripts. Keep `web/` (SPA + GitHub OAuth Vercel functions) and anything it imports. No compatibility shims — dead code is removed, not deprecated. Follow-on cleanup grep per the usual dead-code procedure.
+**Teardown (D7/D8):** delete `src/router/`, the grader, backend-worker, attestation/receipt crypto, ring store, and their tests/scripts. Keep `web/` (SPA + GitHub OAuth Vercel functions) and anything it imports. **Salvage before deleting (D19):** the existing tested Node glue — HTTP clients, JSON/config handling, git/GitHub-API helpers, and their tests — moves into `pipeline/` rather than being rewritten; only router/grader/attestation *logic* is deleted. No compatibility shims — dead code is removed, not deprecated. Follow-on cleanup grep per the usual dead-code procedure.
 
 ---
 
@@ -175,7 +177,7 @@ Ordered; first failure blocks with a distinct check-run annotation:
 
 1. **Path containment** — changed files ⊆ `submissions/<author>/**` (§4.2.1). This is the vendored-pi immutability check (D20): `vendor/` is outside the allowed set, so any attempt to modify pi blocks automatically with reason `vendored-pi-modification` (special-cased message so the submitter knows exactly what they did).
 2. **Manifest validation** — parseable, author field matches dir and PR author, size caps.
-3. **Tripwire grep** — diff scanned for the 89 TB task IDs and a curated list of distinctive solution strings (list maintained at `pipeline/arena_pipeline/data/tripwire.txt`; seeded from task names + high-signal strings from `solution/` dirs). Case-insensitive, plus base64/hex-encoded forms of task names.
+3. **Tripwire grep** — diff scanned for the 89 TB task IDs and a curated list of distinctive solution strings (list maintained at `pipeline/data/tripwire.txt`; seeded from task names + high-signal strings from `solution/` dirs). Case-insensitive, plus base64/hex-encoded forms of task names.
 
 ### 5.2 LLM judge
 
@@ -199,23 +201,23 @@ Verdict flapping guard: the judge runs per-push on the diff SHA; identical diff 
 
 ## 6. Stage 2/3 — eval runs (`smoke.yml`, `full-run.yml`)
 
-### 6.1 Run orchestration (`runner.py`)
+### 6.1 Run orchestration (`runner.ts`)
 
 Common sequence for both run types:
 
 1. Acquire concurrency slot (GitHub Actions `concurrency` groups: smoke keyed per-author, full keyed org-wide with max 1; queued not cancelled).
-2. Check author monthly budget (`budget.py` sums `results/runs/*.json` ledger dollars for the author this calendar month; over $30 → fail with reason `monthly-budget-exhausted`, smoke-only per D5 — i.e. full runs blocked, smoke still allowed until the smoke spend itself would exceed the remainder).
+2. Check author monthly budget (`budget.ts` sums `results/runs/*.json` ledger dollars for the author this calendar month; over $30 → fail with reason `monthly-budget-exhausted`, smoke-only per D5 — i.e. full runs blocked, smoke still allowed until the smoke spend itself would exceed the remainder).
 3. Mint key: `POST /api/v1/keys/` name `pr-<number>-<smoke|full>-<attempt>`, `limit` = cap (D5).
-4. Run Harbor with the pi agent adapter (§6.2) — smoke: 3 sequential trials × 16 tasks (`-i` globs from smoke-subset.md §4), concurrency 4; full: 1 trial × 89 tasks, concurrency 4.
+4. Run Harbor with the pi agent adapter (§6.2) — `runner.ts` spawns the `harbor` CLI as a subprocess with `--agent-import-path` pointing at `agent/pi_agent.py` (the Node↔Python boundary, D19) and consumes Harbor's JSON output artifacts. Smoke: 3 sequential trials × 16 tasks (`-i` globs from smoke-subset.md §4), concurrency 4; full: 1 trial × 89 tasks, concurrency 4.
 5. Pull the key's generation records (this is the *only* cost source; nothing self-reported).
-6. **Validity assertions** (`ledger.py`): `byok_usage == 0`; every record's model ∈ allowlist and not `:free`; no records timestamped after teardown (post-teardown record → incident flag in the results file + run voided).
+6. **Validity assertions** (`ledger.ts`): `byok_usage == 0`; every record's model ∈ allowlist and not `:free`; no records timestamped after teardown (post-teardown record → incident flag in the results file + run voided).
 7. Delete the key. Schedule a **T+30min re-check** of the key's ledger (via a `workflow_dispatch`d verification job) to catch post-teardown records that landed late.
 8. Emit results JSON (§7.1), sign, push to `results/runs/` on main via `RESULTS_BOT_TOKEN`.
 9. Smoke only: gate = median pass count ≥ `smoke.gate` (`TBD(probe)`); pass → `full-run.yml` dispatched automatically (D6).
 
-### 6.2 pi ↔ Harbor agent adapter (`pi_agent.py`) — the load-bearing new component
+### 6.2 pi ↔ Harbor agent adapter (`agent/pi_agent.py`) — the load-bearing new component
 
-Harbor drives agents against task containers. The adapter implements Harbor's installed-agent interface:
+Harbor drives agents against task containers. The adapter implements Harbor's installed-agent interface. **This is the one Python component in the system (D19)** — Harbor imports it in-process via `--agent-import-path`, which is the only place the Python requirement is real. It must stay self-contained (no imports from `pipeline/`); everything it needs (pi version, checksum, submission path, key, proxy env) arrives via CLI args/env set by `runner.ts`.
 
 - **Install step:** copy vendored pi (`vendor/pi/`, exact version from `competition.toml`) + the submission dir into the task container; install pi from the vendored source only (no network fetch of pi itself); place submission files at pi's config path; verify integrity (checksum of vendored tree matches `competition.toml` `pi.sha256`).
 - **Run step:** invoke pi with the task instruction in non-interactive mode, env: `OPENROUTER_API_KEY` (the per-run key — injected **only** here, never into the workflow env at large), `HTTPS_PROXY`/`HTTP_PROXY`/`NO_PROXY` per §6.4.
@@ -241,7 +243,7 @@ One dedicated bare-metal box (Hetzner AX52-class: 16 cores / 64 GB / NVMe). Prov
 
 ### 6.5 Participant kit (`kit/`)
 
-Python CLI (`arena` entrypoint), thin wrapper over `arena_pipeline`:
+Node CLI (`arena` entrypoint), thin wrapper over `pipeline/src` (D19); local eval runs require Python + `uv` only for Harbor and `agent/pi_agent.py`, same boundary as CI:
 
 - `arena init` — scaffold `submissions/<login>/` from `_template/`, validate login via `gh auth status`.
 - `arena check` — run §5.1 static checks locally (path/manifest/tripwire; judge not included — it's org-funded, but the prompt is public so authors can self-assess).
@@ -250,26 +252,16 @@ Python CLI (`arena` entrypoint), thin wrapper over `arena_pipeline`:
 
 Kit CLI additions required by the skill (§6.6): `arena smoke` must support `--trials 1`, `--tasks <subset>` (iterate on the tasks currently failing/expensive), and `--out <dir>` writing machine-readable artifacts per trial: per-task pass/fail, per-task billed dollars and token breakdown (input/output/cache-read, from the participant's own generation records), and pi transcript paths. `arena report` renders the latest artifacts as a cost/pass table with deltas vs the previous run.
 
-### 6.6 Improvement-loop skill (`kit/skill/SKILL.md`) — high-level requirements
+### 6.6 Improvement-loop skill (`kit/skill/SKILL.md`) — one-pager (D21/D22)
 
-The dev-side counterpart to the pipeline: a skill any coding agent can load to iterate a participant's harness against the smoke set. It is **dev tooling in the kit, not part of the submission** — nothing in it ships inside `submissions/<login>/`, and it never runs in CI.
+Dev tooling in the kit, not part of the submission: nothing in it ships inside `submissions/<login>/`, it never runs in CI, and it enforces and scores nothing. The load-bearing part is the kit CLI above (`--trials 1`, `--tasks`, `--out`, `arena report`); the skill itself is a **single-page agent-agnostic playbook** — standard `SKILL.md` format, only hard dependencies are the `arena` CLI and a shell, no host-specific tool references — describing the loop:
 
-**R1 — Agent-agnostic packaging (D21).** One `SKILL.md` playbook (standard skill format: frontmatter + instructions) whose only hard dependencies are the `arena` CLI and a shell. No Claude-Code-only tool references; anything host-specific goes in a clearly-marked optional section. Distributed in the kit; participants copy or symlink it into their agent's skill directory.
+1. **Analyze (free):** read the last run's `--out` artifacts and pi transcripts for cost sinks and repeated failures (cache misses, bloated context, redundant turns).
+2. **Edit:** one change at a time, inside `submissions/<login>/` only, never `vendor/pi/`; run `arena check` after each edit.
+3. **Cheap trial (~$1–3):** `arena smoke --trials 1` (scope with `--tasks`) to judge direction — single trials are noisy, don't declare victory on one.
+4. **Confirm:** median-of-3 smoke for any change worth keeping; that's the number comparable to the CI gate.
 
-**R2 — Budgeted autonomy (D22).** The skill MUST obtain an explicit budget before any paid run: max dollars and max iterations (e.g. "$5 / 4 iterations"). It tracks cumulative billed spend from the participant's own generation records after every trial, stops at whichever limit hits first (or on convergence, R5), and never exceeds the dollar budget mid-iteration — if the next planned run's estimate (last observed trial cost × 1.5) would exceed the remainder, it stops and reports instead. No paid run before the budget is stated; free analysis steps need no confirmation.
-
-**R3 — Tiered iteration methodology (D23).** Each iteration follows the ladder, escalating only when the cheaper rung justifies it:
-
-1. **Analyze (free):** read the previous run's artifacts (`arena smoke --out` output) and pi transcripts. Identify the top cost sinks and failures: bloated/repeated context, cache-miss patterns (low `cache_read_tokens` on long sessions), redundant tool turns, retry loops, tasks failing on the same root cause. Produce a ranked hypothesis list — every proposed change must name the evidence line(s) behind it.
-2. **Edit:** apply the top hypothesis to the harness dir (plugins/skills/profiles/config only — the skill must refuse to touch `vendor/pi/` and must keep every change inside `submissions/<login>/`).
-3. **Validate cheap (~$1–3):** `arena smoke --trials 1` (optionally `--tasks` scoped to affected tasks). Judge direction, not victory — single trials are noisy (30x per-task token variance).
-4. **Confirm (~$3–8 unoptimized, cheaper as the harness improves):** median-of-3 full smoke only when a candidate survives step 3 and the budget allows; this is the number comparable to the CI gate.
-
-**R4 — Guardrails.** The skill instructs the agent to (a) run `arena check` after every edit and treat a tripwire/path failure as a hard stop; (b) never introduce task-specific content — the task-agnosticity rule is restated inline, with the note that the CI judge (prompt public at `judge/prompts/v1.md`) blocks on `suspicious`; (c) keep each iteration a single reviewable change (no five-simultaneous-edits iterations — attribution of cost deltas requires isolation).
-
-**R5 — Convergence & reporting.** Stop early when two consecutive confirmed iterations improve median cost by <5% with no pass-count gain. Final output: a trajectory table (iteration × change summary × pass count × median $ × delta), total spend vs budget, the surviving harness diff, and explicit "next hypotheses not attempted" so a future session can resume. The trajectory table format matches `arena report` so humans and agents read the same artifact.
-
-**R6 — Honest baselines.** First action in any fresh session: one median-of-3 smoke of the *current* harness state (or reuse artifacts from the last 24h if present) so deltas are measured against reality, never against remembered or assumed numbers.
+Plus two inline warnings: the task-agnosticity rule (judge prompt is public at `judge/prompts/v1.md`; `suspicious` blocks), and a reminder to note per-trial spend from the participant's own generation records. **Deferred until demand exists:** autonomy budgets, convergence detection, trajectory reporting — do not build these in v1.
 
 ---
 
@@ -277,7 +269,7 @@ The dev-side counterpart to the pipeline: a skill any coding agent can load to i
 
 ### 7.1 Per-run results file — `results/runs/<run-id>.json`
 
-`run-id` = `pr<number>-<smoke|full>-a<attempt>` (matches key name). Schema (source of truth: `results.py` dataclasses; JSON Schema exported to `results/schema/run.schema.json`):
+`run-id` = `pr<number>-<smoke|full>-a<attempt>` (matches key name). Schema (source of truth: `results.ts` types; JSON Schema exported to `results/schema/run.schema.json`):
 
 ```jsonc
 {
@@ -312,7 +304,7 @@ Signed with minisign (detached `.minisig`), committed by the results bot. The ge
 
 ### 7.2 Leaderboard — `results/leaderboard.json`
 
-Regenerated by `results.py` after every full run (and on demand):
+Regenerated by `results.ts` after every full run (and on demand):
 
 - Consider only `run_type == "full"`, `validity.voided == false`, submission merged or PR open (both shown; merged flagged).
 - **Eligible** = `median_pass_count ≥ full.eligibility_bar` (`TBD(probe)`, D16).
@@ -378,7 +370,7 @@ max_bytes = 1048576
 max_files = 200
 ```
 
-`config.py` refuses to start official runs while any `TBD(probe)` sentinel (`-1`) remains — except `run_type: "baseline"` runs, which are exactly how those numbers get filled.
+`config.ts` refuses to start official runs while any `TBD(probe)` sentinel (`-1`) remains — except `run_type: "baseline"` runs, which are exactly how those numbers get filled.
 
 ---
 
@@ -401,18 +393,18 @@ Sized for one implementation agent each; dependencies noted. Every WP includes t
 
 | WP | Title | Depends on | Deliverables | Acceptance criteria |
 |----|-------|-----------|--------------|---------------------|
-| 1 | **Repo pivot & scaffolding** | — | Teardown per §2 (router/grader/attestation/worker deleted, dead-code grep clean); new layout; `competition.toml`; `vendor/pi/` at current latest release with `pi.version`/`pi.sha256` recorded; `pipeline/` package skeleton + `config.py` | repo builds/tests green post-teardown; config loader round-trips §8 incl. TBD sentinels; `vendor/pi` checksum verifies |
-| 2 | **pi ↔ Harbor agent adapter** | 1 | `pi_agent.py` per §6.2 | vanilla pi completes ≥1 real TB task end-to-end via Harbor locally (echo/dry-run mode for CI tests); submission dir mounts at pi's config path; checksum gate works; key + proxy env injected only into task container |
-| 3 | **Keys, ledger, budget** | 1 | `keys.py`, `ledger.py`, `budget.py` per §6.1 | against the real Provisioning API (test management key): mint→limit→delete lifecycle; generation pull with cache telemetry; all §6.1.6 validity assertions unit-tested incl. void paths; monthly budget sums from fixture results files |
-| 4 | **Static checks + tripwire** | 1 | `checks.py` per §5.1; `tripwire.txt` seeded from TB task names + solution strings | path-containment catches `vendor/` and cross-author edits with distinct reasons; manifest/size validation; tripwire catches plain, base64, and hex forms in fixture diffs |
-| 5 | **LLM judge** | 1 | `judge.py`, `judge/prompts/v1.md`, all four §5.3 surfacing outputs, override label handling, SHA-keyed verdict cache | fixture diffs (clean config / obvious embedding / disguised-encoded embedding) get correct verdicts; sticky comment updates in place; override recorded in check summary + judge log |
+| 1 | **Repo pivot & scaffolding** | — | Teardown per §2 with **Node-glue salvage** (existing tested HTTP/JSON/git helpers + tests move into `pipeline/`; router/grader/attestation logic deleted, dead-code grep clean); new layout; `competition.toml`; `vendor/pi/` at current latest release with `pi.version`/`pi.sha256` recorded; `pipeline/` package skeleton + `config.ts` | repo builds/tests green post-teardown; salvaged glue's existing tests still pass in new location; config loader round-trips §8 incl. TBD sentinels; `vendor/pi` checksum verifies |
+| 2 | **pi ↔ Harbor agent adapter** | 1 | `agent/pi_agent.py` per §6.2 (self-contained; no `pipeline/` imports) | vanilla pi completes ≥1 real TB task end-to-end via Harbor locally (echo/dry-run mode for CI tests); submission dir mounts at pi's config path; checksum gate works; key + proxy env injected only into task container; all inputs arrive via args/env from `runner.ts` |
+| 3 | **Keys, ledger, budget** | 1 | `keys.ts`, `ledger.ts`, `budget.ts` per §6.1 | against the real Provisioning API (test management key): mint→limit→delete lifecycle; generation pull with cache telemetry; all §6.1.6 validity assertions unit-tested incl. void paths; monthly budget sums from fixture results files |
+| 4 | **Static checks + tripwire** | 1 | `checks.ts` per §5.1; `tripwire.txt` seeded from TB task names + solution strings | path-containment catches `vendor/` and cross-author edits with distinct reasons; manifest/size validation; tripwire catches plain, base64, and hex forms in fixture diffs |
+| 5 | **LLM judge** | 1 | `judge.ts`, `judge/prompts/v1.md`, all four §5.3 surfacing outputs, override label handling, SHA-keyed verdict cache | fixture diffs (clean config / obvious embedding / disguised-encoded embedding) get correct verdicts; sticky comment updates in place; override recorded in check summary + judge log |
 | 6 | **CI workflows** | 2,3,4,5 | `checks.yml`, `smoke.yml`, `full-run.yml` per §1/§5/§6; concurrency groups; auto full-run dispatch; T+30min ledger re-check job | fork-PR secret isolation verified (judge reads diff via API only, never checks out PR code under `pull_request_target`); smoke→full auto-trigger fires only on gate pass; per-day + concurrency limits enforced |
 | 7 | **Eval box + egress proxy** | — (parallel) | `infra/`: provisioning script/doc, runner registration, squid config + internal-network compose, image pre-pull, log retention | box runs a smoke workload end-to-end; direct egress from a task container fails closed; allowed domains work via proxy; **final registry allowlist derived empirically** (log-only run over all 89 → diff vs seed list); per-run proxy logs archived |
-| 8 | **Results + leaderboard generation** | 3 | `results.py` per §7.1–7.2; JSON Schema export; minisign signing; results-bot commit flow; `leaderboard.yml` | fixture runs → valid signed JSON (schema-validated); leaderboard math correct incl. eligibility bar, per-author best, below-bar section, baseline pin; append-only (never rewrites existing run files) |
+| 8 | **Results + leaderboard generation** | 3 | `results.ts` per §7.1–7.2; JSON Schema export; minisign signing; results-bot commit flow; `leaderboard.yml` | fixture runs → valid signed JSON (schema-validated); leaderboard math correct incl. eligibility bar, per-author best, below-bar section, baseline pin; append-only (never rewrites existing run files) |
 | 9 | **Web UI rewire** | 8 | `web/` per §7.3 | leaderboard + run-detail render from fixture `results/` JSON; router/attestation views removed; OAuth flow still works |
 | 10 | **Participant kit** | 2,3,4 | `kit/` CLI per §6.5 incl. `--tasks`/`--out` artifacts and `arena report`; participant-facing README/quickstart | `init`/`check`/`verify-pi` work offline; `smoke --trials 1` completes against a real key and reports billed dollars from the participant's own ledger; `--out` artifacts schema-stable and consumed by `arena report`; quickstart takes a new participant from clone → local smoke result |
 | 11 | **Baseline probe + config freeze** | 2,3,7,8 | probe runner mode (`run_type: "baseline"`, cap-exempt, manual dispatch); freeze procedure doc | probe produces a baseline results file; documented one-PR procedure fills `smoke.gate` + `full.eligibility_bar` and recalibrates D5 caps; config loader then accepts official runs |
-| 12 | **Improvement-loop skill** | 10 | `kit/skill/SKILL.md` per §6.6 (R1–R6) | loaded into ≥2 different agents (e.g. Claude Code + pi) it drives a full budgeted iteration against a scratch submission: baseline → analyze → edit → 1-trial → confirm, stops at budget, emits the R5 trajectory report; refuses `vendor/` edits and out-of-dir writes; every proposed change cites artifact evidence |
+| 12 | **Improvement-loop skill one-pager** | 10 | `kit/skill/SKILL.md` per §6.6 — one page, agent-agnostic | loaded into ≥2 different agents (e.g. Claude Code + pi) it drives one analyze → edit → cheap-trial → confirm cycle against a scratch submission using only the `arena` CLI; stays inside `submissions/<login>/`; no autonomy/convergence machinery present |
 
 Suggested build order: WP1 → {WP2, WP3, WP4, WP5, WP7 in parallel} → WP6 → {WP8, WP10} → WP9 → {WP11, WP12} (WP11 also blocks on the org's OpenRouter credit refresh).
 
@@ -423,3 +415,4 @@ Suggested build order: WP1 → {WP2, WP3, WP4, WP5, WP7 in parallel} → WP6 →
 - Harness-Bench secondary tier (possible future; runs on the same infra per D9 — would need a pi adapter for HB and a scoring policy decision, since HB uses an LLM judge for verification).
 - Full-run trigger revisit (D6 needs-more-thought), sockpuppet posture revisit (T7) — both after first weeks of real traffic.
 - Incident playbook (voided runs, post-teardown records → disqualification tiers, appeal path) — draft before season 0 opens, not needed to build.
+- Improvement-loop skill autonomy machinery — budgets, convergence detection, trajectory reporting (D22) — revisit if participants ask for it.
