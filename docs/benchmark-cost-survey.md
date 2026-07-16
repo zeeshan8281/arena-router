@@ -112,3 +112,53 @@ Same reasoning applies partially to tau2-bench/BFCL (3d/3e): they drive the mode
 ## 9. Recommendation
 
 Full-harness scope is affordable — no need to cut to tool-call-only benchmarks (which would neutralize the caching/context levers anyway, §5). **Terminal-Bench 2.x as the full CI benchmark** (89 tasks, terminal-native = pi's exact modality, ~$8–60/run cached; Z.ai even publishes a "Terminal-Bench 2.0 Verified" variant so GLM-family baselines exist), with **SWE-bench Lite as an optional harder tier** (~$27–200 cached), and a 15–20-task pinned smoke subset keeping per-PR CI ≈ $10.
+
+---
+
+## 10. Model allowlist data — open-weights models on OpenRouter
+
+*Added 2026-07-16. Rankings from OpenRouter's live "This Week" chart (browser-rendered, fetched 05:58 UTC); pricing from the catalog API (`/api/v1/models`, provider-averaged — model pages may differ by a cent, e.g. GLM 5.2 shows $0.93/$3.00 on its page vs $0.95/$2.99 in the API).*
+
+**Decision context:** benchmark = Terminal-Bench 2.x (§9), baseline model = GLM 5.2. The open question is whether entrants are locked to GLM 5.2 or may use any allowlisted open-weights model (making cheap-model routing a legal strategy).
+
+### 10.1 Verified by real weekly token volume
+
+OpenRouter's rankings page shows only the top ~20 models overall; after excluding proprietary models and `:free` variants, exactly 8 open-weights models carry verified usage numbers.
+
+| # | Model ID | Lab | License | In $/M | Out $/M | Cached-in $/M | Context | Weekly tokens |
+|---|----------|-----|---------|--------|---------|---------------|---------|---------------|
+| 1 | `xiaomi/mimo-v2.5` | Xiaomi | Custom open | 0.14 | 0.28 | ~0* | 1M | 8.03T |
+| 2 | `deepseek/deepseek-v4-flash` | DeepSeek | MIT | 0.10 | 0.20 | 0.02 | 1M | 5.22T |
+| 3 | `minimax/minimax-m3` | MiniMax | Custom open | 0.30 | 1.20 | 0.06 | 1M | 4.04T |
+| 4 | **`z-ai/glm-5.2`** (baseline) | Zhipu/Z.ai | Custom open | 0.95 | 2.99 | 0.18 | 1M | 3.29T |
+| 5 | `deepseek/deepseek-v4-pro` | DeepSeek | MIT | 0.43 | 0.87 | ~0* | 1M | 2.54T |
+| 6 | `stepfun/step-3.7-flash` | StepFun | Custom open | 0.20 | 1.15 | 0.04 | 256K | 946B |
+| 7 | `xiaomi/mimo-v2.5-pro` | Xiaomi | Custom open | 0.43 | 0.87 | ~0* | 1M | 645B |
+| 8 | `openai/gpt-oss-120b` | OpenAI (open) | MIT | 0.04 | 0.17 | – | 131K | 528B |
+
+\* Catalog API reports $0.00 cached-input — likely free cache reads or provider averaging; verify per-provider before relying on it in scoring.
+
+### 10.2 Proxy-ranked fill to 20 (NOT in OR weekly top-20; ecosystem-adoption judgment, no usage numbers)
+
+| # | Model ID | License | In $/M | Out $/M | Cached-in $/M | Context |
+|---|----------|---------|--------|---------|---------------|---------|
+| 9 | `qwen/qwen3.7-plus` | Apache-2.0 | 0.32 | 1.28 | 0.06 | 1M |
+| 10 | `qwen/qwen3.7-max` | Apache-2.0 | 1.48 | 4.42 | 0.29 | 1M |
+| 11 | `qwen/qwen3.5-plus-20260420` | Apache-2.0 | 0.30 | 1.80 | – | 1M |
+| 12 | `deepseek/deepseek-v3.2` | MIT | 0.27 | 0.40 | 0.13 | 164K |
+| 13 | `meta-llama/llama-4-maverick` | Llama license | 0.20 | 0.80 | – | 1M |
+| 14 | `meta-llama/llama-4-scout` | Llama license | 0.10 | 0.30 | – | 10M |
+| 15 | `mistralai/mistral-medium-3-5` | Apache-2.0 | 1.50 | 7.50 | – | 262K |
+| 16 | `mistralai/mistral-small-2603` | Apache-2.0 | 0.15 | 0.60 | 0.01 | 262K |
+| 17 | `google/gemma-4-31b-it` | Gemma Terms | 0.22 | 0.55 | 0.12 | 262K |
+| 18 | `z-ai/glm-5.1` | Custom open | 0.97 | 3.04 | 0.18 | 203K |
+| 19 | `moonshotai/kimi-k2.7-code` | Custom open | 0.72 | 3.49 | 0.15 | 262K |
+| 20 | `nousresearch/hermes-3-llama-3.1-70b` | Llama license | 0.70 | 0.70 | – | 131K |
+
+### 10.3 Implications for the allowlist decision
+
+1. **GLM 5.2 as baseline is validated** — #4 open-weights model by real usage, and the most expensive of the verified top 5, so cost headroom below it genuinely exists.
+2. **The cheap tier is mainstream, not fringe**: the two most-used open models (MiMo v2.5, DeepSeek V4 Flash) are 5–10x cheaper than GLM 5.2. If multi-model routing is legal, "route easy tasks to Flash" dominates immediately — decide whether that's the point or a confound.
+3. **Natural allowlist criterion** if multi-model: "open-weights models in OpenRouter's weekly top 20" — the 8 verified models. Non-arbitrary, re-derivable each season, and guarantees well-supported endpoints with working caching.
+4. **Rules requirement:** explicitly ban `:free` variants (`tencent/hy3:free` was #1 overall at 8.98T weekly tokens) — they zero out the cost metric and break the competition.
+5. **No coding-specific ranking exists** on OpenRouter (only per-language usage charts), so overall-weekly is the best available popularity signal.
