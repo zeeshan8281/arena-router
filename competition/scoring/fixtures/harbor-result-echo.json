@@ -1,0 +1,29 @@
+{
+    "id": "5eed25f1-44e4-47dc-bd50-761c257b976f",
+    "started_at": "2026-07-17T00:03:03.665618",
+    "finished_at": "2026-07-17T00:05:50.725108",
+    "n_total_trials": 1,
+    "stats": {
+        "n_trials": 1,
+        "n_errors": 0,
+        "evals": {
+            "pi__z-ai-glm-5.2__terminal-bench": {
+                "n_trials": 1,
+                "n_errors": 0,
+                "metrics": [
+                    {
+                        "mean": 0.0
+                    }
+                ],
+                "reward_stats": {
+                    "reward": {
+                        "0.0": [
+                            "fix-git__m84xLVm"
+                        ]
+                    }
+                },
+                "exception_stats": {}
+            }
+        }
+    }
+}
