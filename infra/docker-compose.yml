@@ -1,0 +1,99 @@
+# docker-compose.yml — AutoRouter Arena v2 eval box (impl-spec §6.3 / §6.4)
+#
+# Two services on one bare-metal box (Hetzner AX52-class, 16 cores / 64 GB / NVMe):
+#   - runner : GitHub Actions self-hosted runner (label `eval`). smoke.yml /
+#              full-run.yml jobs land here. It drives Harbor, which spins up the
+#              per-task containers.
+#   - squid  : the ONLY egress path (§6.4). Straddles the internal + egress nets.
+#
+# Network topology (§6.4 / D18) — this is the load-bearing security property:
+#   - `internal` network is `internal: true`  → NO route off-box. Task
+#     containers (created by Harbor at runtime) attach here and can reach ONLY
+#     other members of `internal`, i.e. squid. No proxy → no connectivity.
+#   - squid is dual-homed: on `internal` (so task containers can reach it at
+#     http://squid:3128) AND on `egress` (a normal bridge with a route out).
+#     squid is the sole bridge between the two, and it only forwards allowlisted
+#     CONNECT hosts. Everything else fails closed.
+#   - The runner itself sits on `egress` (it must reach github.com to poll for
+#     jobs and stream logs). It does NOT sit on `internal`; task containers are
+#     isolated from it except through Harbor's Docker API usage.
+#
+# NOTE ON RUNTIME TASK CONTAINERS: Harbor (invoked by runner.ts inside the
+# runner) creates the 89 task containers itself via the mounted Docker socket.
+# Those containers are NOT declared here. Harbor MUST attach them to the
+# `internal` network and inject HTTPS_PROXY/HTTP_PROXY=http://squid:3128 +
+# NO_PROXY per §6.2. The network is created here (external-referenceable name
+# below) so Harbor can join it. This compose file only stands up the two
+# long-lived services + the two networks.
+
+services:
+  # ------------------------------------------------------------------ squid
+  squid:
+    image: ubuntu/squid:latest
+    container_name: arena-squid
+    restart: unless-stopped
+    volumes:
+      - ./squid/squid.conf:/etc/squid/squid.conf:ro
+      # Proxy access logs live on a host bind-mount so host-level logrotate can
+      # enforce the 90-day retention (§6.4). See runner-setup.md.
+      - /var/log/arena-squid:/var/log/squid
+    networks:
+      - internal   # task containers reach squid here (no route out on this net)
+      - egress     # squid's own path to the allowlisted upstreams
+    # squid never needs to initiate anything except to upstreams via egress.
+    healthcheck:
+      test: ["CMD", "sh", "-c", "squid -k check || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ------------------------------------------------------------------ runner
+  runner:
+    # Self-hosted GitHub Actions runner. Any maintained runner image works;
+    # myoung34/github-runner is a common choice. Pin a digest in production.
+    image: myoung34/github-runner:latest
+    container_name: arena-gh-runner
+    restart: unless-stopped
+    environment:
+      # --- GH runner registration (fill from the eval-runner GH environment) ---
+      # Repo the runner attaches to, e.g. https://github.com/<org>/<repo>
+      REPO_URL: ${GH_REPO_URL}
+      # Short-lived registration token (Settings → Actions → Runners → New).
+      # Prefer minting this at boot from a fine-grained PAT rather than storing it.
+      RUNNER_TOKEN: ${GH_RUNNER_TOKEN}
+      RUNNER_NAME: arena-eval-01
+      # Label MUST be `eval` — smoke.yml / full-run.yml target `runs-on: [self-hosted, eval]`.
+      LABELS: eval
+      RUNNER_SCOPE: repo
+      # Ephemeral so a job never inherits a dirty runner from a prior run.
+      EPHEMERAL: "true"
+      DISABLE_AUTO_UPDATE: "true"
+    volumes:
+      # Harbor (run by the workflow) needs the Docker API to create task
+      # containers. Mounting the socket makes those containers siblings on this
+      # host's Docker daemon — which is why the `internal`/`egress` networks are
+      # created here with stable names Harbor can attach to.
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Persistent Docker image cache lives on the host daemon (NVMe); the
+      # pre-pull script (runner-setup.md) warms the 89 pinned images once.
+      - runner-work:/actions-runner/_work
+    networks:
+      - egress   # reach github.com for job polling / log streaming
+    depends_on:
+      - squid
+
+networks:
+  # Internal-only: NO route out. `internal: true` tells Docker not to attach a
+  # gateway to the host's default bridge, so members cannot egress except by
+  # talking to a dual-homed peer (squid). This is the §6.4 fail-closed core.
+  internal:
+    name: arena-internal
+    internal: true
+  # Normal bridge with outbound route. Only squid (egress side) and the runner
+  # live here. Task containers must NEVER be attached to this network.
+  egress:
+    name: arena-egress
+    driver: bridge
+
+volumes:
+  runner-work:

@@ -1,8 +1,52 @@
-# Single config source (spec §8). Grown as work packages need it — only [pi] so far
-# (WP1 vendoring). Other tables (benchmark, models, smoke, full, budget, judge) land
-# with the runner/pipeline that reads them.
+# Single config source (spec §8). Loaded + validated by competition/scoring/config.mjs.
+# TBD(probe) values are the sentinel -1 until the baseline probe freezes them; config
+# refuses official (non-baseline) runs while any -1 remains.
+
+[competition]
+season = 0
 
 [pi]
 package = "@earendil-works/pi-coding-agent"   # provenance; installed from vendor/pi/pi.tgz only (D20)
 version = "0.80.9"
 sha256 = "93e35f204ebbdc0c55b699581c282eeb47d444827f7cbd5d2a8a86e92b75e180"  # of vendor/pi/pi.tgz
+
+[benchmark]
+dataset = "terminal-bench/terminal-bench-2"
+image_tag = "20260204"                  # xiangyangli/<task>:20260204 (Verified/2.1)
+concurrency = 4
+
+[models]
+allowlist = ["xiaomi/mimo-v2.5", "deepseek/deepseek-v4-flash",
+  "minimax/minimax-m3", "z-ai/glm-5.2", "deepseek/deepseek-v4-pro",
+  "stepfun/step-3.7-flash", "xiaomi/mimo-v2.5-pro", "openai/gpt-oss-120b"]
+ban_free_variants = true
+baseline_model = "z-ai/glm-5.2"
+
+[smoke]
+tasks = ["fix-git", "git-leak-recovery", "pypi-server", "kv-store-grpc",
+  "write-compressor", "nginx-request-logging", "configure-git-webserver",
+  "modernize-scientific-stack", "sanitize-git-repo", "password-recovery",
+  "query-optimize", "custom-memory-heap-crash", "db-wal-recovery",
+  "model-extraction-relu-logits", "regex-log", "pytorch-model-cli"]
+trials = 3
+gate = -1                               # TBD(probe): frozen absolute pass count
+cap_usd = 1.50
+runs_per_pr_per_day = 2
+
+[full]
+trials = 1
+eligibility_bar = -1                    # TBD(probe): frozen absolute pass count
+cap_usd = 10.00
+runs_per_pr_per_day = 1
+org_concurrency = 1
+
+[budget]
+author_monthly_usd = 30.00
+
+[judge]
+model = "claude-sonnet-4-6"
+prompt = "competition/anti-abuse/judge-prompt.md"
+
+[submission]
+max_bytes = 1048576
+max_files = 200

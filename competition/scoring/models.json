@@ -1,14 +1,14 @@
 {
-  "note": "Model allowlist — the 8 open-weights models in OpenRouter's weekly top-20 (pivot spec). :free variants BANNED (enforced in integrity.mjs). SLUGS ARE UNVERIFIED — confirm each against openrouter.ai/models before launch; integrity checks match the generation record's `model` field against `slug`.",
+  "note": "Model allowlist — the 8 open-weights models in OpenRouter's weekly top-20 (pivot spec). :free variants BANNED (enforced in integrity.mjs). SLUGS VERIFIED against the live openrouter.ai/api/v1/models catalog on 2026-07-17 — all 8 slugs matched exactly (none could not be verified). Integrity checks match the generation record's `model` field against `slug`.",
   "allowlist": [
-    { "id": "mimo-v2.5",         "slug": "xiaomi/mimo-v2.5",            "verified": false },
-    { "id": "mimo-v2.5-pro",     "slug": "xiaomi/mimo-v2.5-pro",        "verified": false },
-    { "id": "deepseek-v4-flash", "slug": "deepseek/deepseek-v4-flash",  "verified": false },
-    { "id": "deepseek-v4-pro",   "slug": "deepseek/deepseek-v4-pro",    "verified": false },
-    { "id": "minimax-m3",        "slug": "minimax/minimax-m3",          "verified": false },
+    { "id": "mimo-v2.5",         "slug": "xiaomi/mimo-v2.5",            "verified": true },
+    { "id": "mimo-v2.5-pro",     "slug": "xiaomi/mimo-v2.5-pro",        "verified": true },
+    { "id": "deepseek-v4-flash", "slug": "deepseek/deepseek-v4-flash",  "verified": true },
+    { "id": "deepseek-v4-pro",   "slug": "deepseek/deepseek-v4-pro",    "verified": true },
+    { "id": "minimax-m3",        "slug": "minimax/minimax-m3",          "verified": true },
     { "id": "glm-5.2",           "slug": "z-ai/glm-5.2",                "verified": true },
-    { "id": "step-3.7-flash",    "slug": "stepfun/step-3.7-flash",      "verified": false },
-    { "id": "gpt-oss-120b",      "slug": "openai/gpt-oss-120b",         "verified": false }
+    { "id": "step-3.7-flash",    "slug": "stepfun/step-3.7-flash",      "verified": true },
+    { "id": "gpt-oss-120b",      "slug": "openai/gpt-oss-120b",         "verified": true }
   ],
   "baseline": { "id": "glm-5.2", "slug": "z-ai/glm-5.2" }
 }

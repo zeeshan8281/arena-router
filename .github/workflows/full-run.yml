@@ -1,0 +1,87 @@
+# full-run.yml — Stage 3: full 89-task benchmark on the self-hosted eval runner
+# (spec §6). Dispatched automatically by smoke.yml on smoke pass (D6), or by a
+# maintainer. Mints a $10-capped key, runs 1 trial × 89 tasks, pulls the ledger,
+# runs validity assertions, emits + commits results/runs/<run-id>.json, then
+# triggers the leaderboard regen.
+name: full-run
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:     { description: "PR number", required: true }
+      author: { description: "PR author github login", required: true }
+
+# Org-wide single-slot: at most one full run anywhere at a time; others queue,
+# never cancel (spec §6.1.1 / §8 full.org_concurrency = 1).
+concurrency:
+  group: full-run
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write          # to dispatch leaderboard.yml
+
+jobs:
+  full:
+    runs-on: [self-hosted, eval]     # dedicated eval box (spec §6.3/D9)
+    environment: eval-runner          # OPENROUTER_MANAGEMENT_KEY + RESULTS_BOT_TOKEN (§3)
+    steps:
+      - name: Checkout PR merge ref (gated behind judge + smoke — spec §3)
+        uses: actions/checkout@v4
+        with:
+          ref: refs/pull/${{ github.event.inputs.pr }}/merge
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # Mint $10 key → harbor 1×89 → ledger pull → validity assertions →
+      # results/runs/<run-id>.json (spec §6.1). runner.mjs deletes the key and
+      # records void/anomaly flags; exits non-zero on a hard failure.
+      - name: Run full benchmark (mint capped key → harbor 89 → ledger → validity)
+        env:
+          OPENROUTER_MANAGEMENT_KEY: ${{ secrets.OPENROUTER_MANAGEMENT_KEY }}
+        run: |
+          node competition/runner.mjs \
+            --type full \
+            --pr "${{ github.event.inputs.pr }}" \
+            --author "${{ github.event.inputs.author }}" \
+            --submission "submissions/${{ github.event.inputs.author }}"
+
+      # Commit the per-run results JSON to main via the fine-grained bot PAT
+      # (contents:write on this repo only — spec §3/D15). Not github.token so the
+      # push is attributed to the bot and can target the default branch.
+      - name: Commit results/ to main
+        env:
+          RESULTS_BOT_TOKEN: ${{ secrets.RESULTS_BOT_TOKEN }}
+        run: |
+          git config user.name  "arena-results-bot"
+          git config user.email "arena-results-bot@users.noreply.github.com"
+          # runner.mjs wrote results/runs/*.json into the working tree (on the PR
+          # merge ref). Preserve those artifacts, then land them on top of main.
+          mkdir -p "$RUNNER_TEMP/results-runs"
+          cp -R results/runs/. "$RUNNER_TEMP/results-runs/" 2>/dev/null || true
+          git fetch origin main
+          git checkout -B main origin/main
+          cp -R "$RUNNER_TEMP/results-runs/." results/runs/ 2>/dev/null || true
+          git add results/runs/
+          if git diff --cached --quiet; then
+            echo "No new results to commit."
+          else
+            git commit -m "results: full run for PR #${{ github.event.inputs.pr }} (${{ github.event.inputs.author }})"
+            git push "https://x-access-token:${RESULTS_BOT_TOKEN}@github.com/${{ github.repository }}.git" HEAD:main
+          fi
+
+  # Regenerate + commit the leaderboard after the run lands (spec §6.1.9/§7.2).
+  trigger-leaderboard:
+    needs: full
+    if: always() && needs.full.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch leaderboard.yml
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run leaderboard.yml

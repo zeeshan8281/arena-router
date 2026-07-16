@@ -1,0 +1,163 @@
+# checks.yml — Stage 1: static checks + LLM judge on every PR push (spec §5).
+#
+# Two jobs:
+#   static  — runs on pull_request. Checks out the PR merge ref and runs the
+#             static/tripwire suite (path-containment, manifest, size, tripwire).
+#             This is untrusted-code-adjacent but only reads the diff/tree; it
+#             holds NO secrets (fork PRs get none by default — spec §3).
+#   judge   — runs on pull_request_target so it can read the org ANTHROPIC_API_KEY
+#             from the `eval-runner` environment (spec §3/§5.2). HARD RULE: it
+#             NEVER checks out or executes PR code — it fetches the diff via the
+#             GitHub API and feeds only that text to judge.mjs (spec §3).
+#
+# Both must pass for smoke.yml to run. The judge blocks on `suspicious` and
+# `violation` (spec §5.3/D12); `clean` proceeds. Block reason is surfaced via a
+# check run, a sticky PR comment, and a PR label — judge.mjs emits the detail,
+# these steps route it (spec §5.3).
+name: checks
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+# One in-flight checks run per PR; new pushes supersede stale ones.
+concurrency:
+  group: checks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ── §5.1 static checks + tripwire — no secrets, no LLM ──────────────────────
+  static:
+    # Only the safe-context event; never run the checkout twice for one PR.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR merge ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Compute PR diff
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          git diff "${BASE}"...HEAD > "$RUNNER_TEMP/pr.diff"
+
+      # Path-containment (incl. vendored-pi immutability, D20), manifest + size
+      # caps, tripwire. checks.mjs exits non-zero on any block (spec §5.1).
+      - name: Static checks + tripwire
+        run: node competition/anti-abuse/checks.mjs --diff "$RUNNER_TEMP/pr.diff"
+
+  # ── §5.2 LLM judge — reads the diff via API, NEVER checks out PR code ────────
+  judge:
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    # Secrets live in the eval-runner environment (spec §3).
+    environment: eval-runner
+    permissions:
+      contents: read          # diff via API only — no PR-code checkout (spec §3)
+      pull-requests: write     # sticky comment + label (spec §5.3)
+      checks: write            # harness-judge check run (spec §5.3)
+    steps:
+      # Deliberately NO actions/checkout of the PR ref. We only check out the
+      # base repo's competition/ tooling (trusted) to run judge.mjs.
+      - name: Checkout base repo tooling (trusted, no PR code)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # Fetch the PR diff as text through the GitHub API — never a code checkout
+      # (spec §3 hard rule). The .diff media type returns unified diff text only.
+      - name: Fetch PR diff via GitHub API
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api \
+            -H "Accept: application/vnd.github.v3.diff" \
+            "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}" \
+            > "$RUNNER_TEMP/pr.diff"
+
+      # Judge the diff text. Verdict clean/suspicious/violation (spec §5.2/D13).
+      # judge.mjs writes the machine-readable verdict; downstream steps surface it.
+      - name: Run judge on diff
+        id: judge
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          node competition/anti-abuse/judge.mjs \
+            --diff "$RUNNER_TEMP/pr.diff" --json \
+            > "$RUNNER_TEMP/verdict.json"
+          cat "$RUNNER_TEMP/verdict.json"
+          VERDICT="$(node -e 'process.stdout.write(require(process.env.RUNNER_TEMP+"/verdict.json").verdict||"")')"
+          echo "verdict=$VERDICT" >> "$GITHUB_OUTPUT"
+
+      # ── §5.3 surfacing (all four sinks; judge.mjs supplies rationale/evidence) ─
+
+      # 1. GitHub Check Run `harness-judge` — pass/fail + rationale in summary.
+      - name: Publish harness-judge check run
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERDICT="${{ steps.judge.outputs.verdict }}"
+          if [ "$VERDICT" = "clean" ]; then CONCLUSION="success"; else CONCLUSION="failure"; fi
+          SUMMARY="$(node -e 'const v=require(process.env.RUNNER_TEMP+"/verdict.json"); process.stdout.write("**verdict:** "+v.verdict+"\n\n"+(v.rationale||"")+"\n\n"+((v.evidence||[]).map(e=>"- "+e).join("\n")))')"
+          gh api "repos/${{ github.repository }}/check-runs" -X POST \
+            -f name="harness-judge" \
+            -f head_sha="${{ github.event.pull_request.head.sha }}" \
+            -f status="completed" \
+            -f conclusion="$CONCLUSION" \
+            -f output[title]="Harness judge: $VERDICT" \
+            -f output[summary]="$SUMMARY"
+
+      # 2. Sticky PR comment — find-and-update a single bot comment (spec §5.3).
+      - name: Sticky PR comment with verdict
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          MARKER="<!-- harness-judge -->"
+          BODY="$MARKER
+          $(node -e 'const v=require(process.env.RUNNER_TEMP+"/verdict.json"); process.stdout.write("### Harness judge: **"+v.verdict+"**\n\n"+(v.rationale||"")+"\n\n"+((v.evidence||[]).length?"Evidence:\n"+v.evidence.map(e=>"- "+e).join("\n")+"\n\n":"")+"_To appeal, a maintainer can apply the `judge-override` label._")')"
+          PR="${{ github.event.pull_request.number }}"
+          ID="$(gh api "repos/${{ github.repository }}/issues/$PR/comments" --jq \
+            "map(select(.body|startswith(\"$MARKER\")))|first|.id // empty")"
+          if [ -n "$ID" ]; then
+            gh api "repos/${{ github.repository }}/issues/comments/$ID" -X PATCH -f body="$BODY"
+          else
+            gh api "repos/${{ github.repository }}/issues/$PR/comments" -X POST -f body="$BODY"
+          fi
+
+      # 3. PR label — judge:clean / judge:suspicious / judge:violation (spec §5.3).
+      - name: Apply judge label
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PR="${{ github.event.pull_request.number }}"
+          VERDICT="${{ steps.judge.outputs.verdict }}"
+          for L in clean suspicious violation; do
+            gh api "repos/${{ github.repository }}/issues/$PR/labels/judge:$L" -X DELETE 2>/dev/null || true
+          done
+          gh api "repos/${{ github.repository }}/issues/$PR/labels" -X POST \
+            -f "labels[]=judge:${VERDICT:-error}"
+
+      # ── §5.3 gate: block smoke/full on suspicious|violation (D12) ────────────
+      - name: Block on suspicious or violation
+        if: steps.judge.outputs.verdict != 'clean'
+        run: |
+          echo "Judge verdict '${{ steps.judge.outputs.verdict }}' blocks this PR (spec §5.3/D12)."
+          exit 1

@@ -1,0 +1,56 @@
+# leaderboard.yml — regenerate + commit results/leaderboard.json (spec §7.2).
+#
+# Reads the committed results/runs/*.json history and regenerates the static
+# leaderboard the web UI consumes (spec §7.3 — no backend, static JSON). Runs
+# after every full run (dispatched by full-run.yml) and on demand. Commits via
+# the fine-grained bot PAT (contents:write only — spec §3/D15).
+name: leaderboard
+
+on:
+  workflow_dispatch:
+  # Safety net: also regen if a results file lands on main by any path.
+  push:
+    branches: [main]
+    paths:
+      - "results/runs/**"
+
+# Serialize regen so concurrent full runs don't race the leaderboard commit.
+concurrency:
+  group: leaderboard
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  leaderboard:
+    runs-on: ubuntu-latest
+    environment: eval-runner          # RESULTS_BOT_TOKEN lives here (spec §3)
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # Regenerate results/leaderboard.json from the runs/ history (spec §7.2).
+      - name: Regenerate leaderboard
+        run: node competition/scoring/results.mjs leaderboard
+
+      - name: Commit leaderboard.json
+        env:
+          RESULTS_BOT_TOKEN: ${{ secrets.RESULTS_BOT_TOKEN }}
+        run: |
+          git config user.name  "arena-results-bot"
+          git config user.email "arena-results-bot@users.noreply.github.com"
+          git add results/leaderboard.json
+          if git diff --cached --quiet; then
+            echo "Leaderboard unchanged."
+          else
+            git commit -m "results: regenerate leaderboard.json"
+            git push "https://x-access-token:${RESULTS_BOT_TOKEN}@github.com/${{ github.repository }}.git" HEAD:main
+          fi

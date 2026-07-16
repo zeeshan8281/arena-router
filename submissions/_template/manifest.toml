@@ -1,0 +1,28 @@
+# AutoRouter Arena v2 — submission manifest
+#
+# Copy this whole directory to submissions/<your-github-login>/ (use `arena init`).
+# The directory name MUST equal your GitHub login and the PR author.
+#
+# HARD RULES (enforced in CI — violations block the PR, they are not advisory):
+#   1. Your PR may only touch submissions/<your-login>/**. A PR that also touches
+#      any other path (vendor/pi/, pipeline/, workflows, results/, another author's
+#      dir, ...) is blocked outright.
+#   2. No task-specific content: no Terminal-Bench task names, no baked-in solution
+#      strings, no benchmark-conditional branching. The tripwire + public judge catch
+#      this, and the judge blocks on `suspicious`.
+#   3. All inference goes through the per-run key injected by the harness. BYOK is
+#      banned (byok_usage == 0 is asserted). Models outside the allowlist void the
+#      run; `:free` variants are banned.
+#   4. Size cap: this directory must stay <= 1 MB and <= 200 files.
+#
+# Everything below [entry]/[harness] is required metadata. Everything else you add
+# to this directory (plugins/, skills/, profiles/, config/) is free-form pi config.
+
+[entry]
+author = "<your-github-login>"     # must match this dir name and the PR author
+name = "my-cheap-harness"          # display name shown on the leaderboard
+description = "one-liner describing your harness"
+
+[harness]
+# Optional. Entrypoint pi agent profile; omit for vanilla pi.
+profile = "profiles/main.toml"
