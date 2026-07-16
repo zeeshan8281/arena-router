@@ -6,11 +6,11 @@ in [`docs/implementation-spec.md`](./docs/implementation-spec.md) §10. Legend:
 
 _Last updated: 2026-07-17._
 
-## Score: 12/12 work packages implemented as far as code allows. What remains is execution, not construction — live runs (need keys), box provisioning (need hardware), and the destructive v1 teardown (needs a go-ahead). All buildable logic is written + tested.
+## Score: 12/12 work packages implemented as far as code allows; v1 quarantined into `legacy/`. What remains is pure execution, not construction — live runs (need an OpenRouter + Anthropic key) and eval-box provisioning (need hardware). All buildable logic is written + tested (54 node + 6 pytest).
 
 | WP | Package | Status | What's in the tree | What's left |
 |----|---------|--------|--------------------|-------------|
-| 1 | Repo pivot & scaffolding | 🟡 | `vendor/pi/pi.tgz` vendored + checksummed; `competition.toml` (full §8); `config.mjs` loader + TBD-sentinel guard | v1 teardown (router/grader) not done — building alongside instead of pivoting; `pipeline/` uses `competition/*.mjs`, not a `pipeline/src/*.ts` package |
+| 1 | Repo pivot & scaffolding | ✅ | `vendor/pi/pi.tgz` vendored + checksummed; `competition.toml` (full §8); `config.mjs` loader + TBD-sentinel guard; **v1 quarantined into `legacy/`** (non-destructive per handoff; `main` untouched) | deliberate layout choice: pipeline is `competition/*.mjs` (Node, no build) not `pipeline/src/*.ts` — a lazy deviation from §2, not a gap |
 | 2 | pi ↔ Harbor adapter | ✅ | `agent/pi_agent.py` (D20 vendored install + checksum + echo mode); 6 offline tests; oracle + echo-install validated live, key-free | real model call unvalidated (needs a key) |
 | 3 | Keys, ledger, budget | 🟡 | `scoring/openrouter.mjs` (mint/status/delete/generation/withCappedKey), `integrity.mjs` (BYOK/allowlist/:free/anomaly), `budget.mjs` (monthly cap) — all unit-tested | Provisioning API **response shapes UNVERIFIED** — needs a real management key to confirm (marked in code) |
 | 4 | Static checks + tripwire | ✅ | `anti-abuse/checks.mjs` (path-containment incl. D20 vendor guard, manifest, size caps) + `tripwire.mjs` (89 task IDs, base64/hex) — tested | `solution-strings.txt` seeded empty; enrich from `solution/` dirs |

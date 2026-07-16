@@ -1,0 +1,124 @@
+{
+  "tasks": [
+    {
+      "id": "rl",
+      "title": "Token-bucket rate limiter",
+      "rubric": "The final solution must implement a correct token bucket: (1) tokens refill as elapsed_time * refill_per_sec, capped at capacity; (2) allow() consumes one token and returns True only when >=1 token is available, else False; (3) elapsed time uses a real/monotonic clock; (4) the review raises at least one genuine concern (thread-safety, capping at capacity, or monotonic clock). Full credit if all four hold. Deduct 0.25 per missing item. 0 if allow() logic is fundamentally wrong.",
+      "stages": [
+        {
+          "id": "s1",
+          "kind": "plan",
+          "prompt": "Design a token-bucket rate limiter. Describe the fields it needs (capacity, current tokens, refill rate, last-refill timestamp) and the algorithm for allow(): how tokens refill from elapsed time and when a request is admitted.",
+          "signals": {
+            "token_estimate": 57,
+            "detected_lang": "en",
+            "complexity_band": "low",
+            "has_code": false
+          }
+        },
+        {
+          "id": "s2",
+          "kind": "implement",
+          "prompt": "Implement it in Python as a class `RateLimiter(capacity: float, refill_per_sec: float)` with `allow(self) -> bool` that admits a request iff a token is available, refilling tokens from wall-clock elapsed time (capped at capacity). Return only the code.",
+          "signals": {
+            "token_estimate": 63,
+            "detected_lang": "en",
+            "complexity_band": "high",
+            "has_code": true
+          }
+        },
+        {
+          "id": "s3",
+          "kind": "review",
+          "prompt": "Review the implementation for correctness — time handling, capping tokens at capacity, and thread-safety. List any real bugs and give a corrected final version if needed.",
+          "signals": {
+            "token_estimate": 43,
+            "detected_lang": "en",
+            "complexity_band": "low",
+            "has_code": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "csv",
+      "title": "CSV parser with quoted fields",
+      "rubric": "Final solution: (1) parse_csv respects double-quoted fields that contain commas (NOT a naive split(',')); (2) returns a list of dicts keyed by the header; (3) handles empty fields; (4) the tests actually exercise a quoted-comma field and an empty field. Full credit if all four hold. Deduct 0.25 per missing item. 0 if it just does text.split(',').",
+      "stages": [
+        {
+          "id": "s1",
+          "kind": "plan",
+          "prompt": "Plan a CSV parser that handles double-quoted fields containing commas and returns a list of dicts keyed by the header row. List the tricky cases it must handle.",
+          "signals": {
+            "token_estimate": 40,
+            "detected_lang": "en",
+            "complexity_band": "low",
+            "has_code": false
+          }
+        },
+        {
+          "id": "s2",
+          "kind": "implement",
+          "prompt": "Implement `parse_csv(text: str) -> list[dict]` in Python: the first line is the header; fields may be wrapped in double quotes, and a quoted field may contain commas. Return one dict per data row keyed by the header. Do NOT use the csv module. Return only the code.",
+          "signals": {
+            "token_estimate": 67,
+            "detected_lang": "en",
+            "complexity_band": "low",
+            "has_code": false
+          }
+        },
+        {
+          "id": "s3",
+          "kind": "test",
+          "prompt": "Write 3 assert-based test cases for parse_csv covering: a quoted field containing a comma, an empty field, and a normal row.",
+          "signals": {
+            "token_estimate": 31,
+            "detected_lang": "en",
+            "complexity_band": "high",
+            "has_code": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "bug",
+      "title": "Fix and harden a binary search",
+      "rubric": "(1) Correctly identifies the infinite-loop bug: `lo = mid` must become `lo = mid + 1` (the low pointer never advances when a[mid] < x); (2) the corrected function is a valid binary search returning an index or -1; (3) tests cover present, absent, and empty-list cases; (4) the review addresses edge cases correctly. Full credit if all four hold. Deduct 0.25 per missing item. 0 if the bug is misidentified or the fix is wrong.",
+      "stages": [
+        {
+          "id": "s1",
+          "kind": "debug",
+          "prompt": "This binary search has a bug that can infinite-loop:\n```python\ndef bsearch(a, x):\n    lo, hi = 0, len(a)\n    while lo < hi:\n        mid = (lo + hi) // 2\n        if a[mid] < x: lo = mid\n        elif a[mid] > x: hi = mid\n        else: return mid\n    return -1\n```\nIdentify the bug and give the corrected function.",
+          "signals": {
+            "token_estimate": 78,
+            "detected_lang": "en",
+            "complexity_band": "high",
+            "has_code": true
+          }
+        },
+        {
+          "id": "s2",
+          "kind": "test",
+          "prompt": "Write assert-based tests proving the fixed bsearch works: element present, element absent, empty list, and first/last element.",
+          "signals": {
+            "token_estimate": 32,
+            "detected_lang": "en",
+            "complexity_band": "high",
+            "has_code": true
+          }
+        },
+        {
+          "id": "s3",
+          "kind": "review",
+          "prompt": "Review the final function and tests. State whether the fix handles duplicates and out-of-range targets correctly, and whether the tests give adequate edge-case coverage.",
+          "signals": {
+            "token_estimate": 43,
+            "detected_lang": "en",
+            "complexity_band": "high",
+            "has_code": true
+          }
+        }
+      ]
+    }
+  ]
+}
