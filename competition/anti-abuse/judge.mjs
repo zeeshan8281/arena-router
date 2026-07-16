@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// LLM judge — ci-anti-abuse §3a, step 2. Runs on the submission diff every push
-// with a cheap model. Triage only: clean → proceed · suspicious → proceed +
-// label for human review · violation → block pending maintainer override. Final
-// call on suspicious/violation is always human.
+// LLM judge — spec §5.2 (D13). Runs on the submission diff every push. Verdict:
+// clean → proceed · suspicious | violation → BLOCK (D12; appeal via the maintainer
+// `judge-override` label). The judge only ever reads the diff, never PR code (§3).
 //
 //   git diff origin/main...HEAD | node competition/anti-abuse/judge.mjs [--json]
-//   env: OPENROUTER_API_KEY (required to run) · JUDGE_MODEL (default gpt-4o-mini)
+//   env: ANTHROPIC_API_KEY (required) · JUDGE_MODEL (default claude-sonnet-4-6)
+// D13: Anthropic Claude Sonnet 4.6, deliberately OFF the competition model pool.
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -39,21 +39,40 @@ export function buildPrompt(diff) {
     .replace("{{DIFF}}", diff.slice(0, 60000));      // cap the diff sent to the judge
 }
 
+/** blocked verdicts (D12): only `clean` proceeds. */
+export const isBlocked = (verdict) => verdict !== "clean";
+
+/** Call the Anthropic Messages API on a diff and return a parsed verdict.
+ *  Pure w.r.t. the network via the injectable `fetchImpl` (tests pass a stub). */
+export async function callJudge(diff, { apiKey, model = "claude-sonnet-4-6", fetchImpl = fetch } = {}) {
+  const res = await fetchImpl("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 1024,
+      temperature: 0,
+      messages: [{ role: "user", content: buildPrompt(diff) }],
+    }),
+  });
+  const data = await res.json();
+  const text = Array.isArray(data?.content) ? data.content.map((b) => b.text || "").join("") : "";
+  return parseVerdict(text);
+}
+
 // ── CLI ──
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const key = process.env.OPENROUTER_API_KEY;
-  if (!key) { console.error("OPENROUTER_API_KEY required to run the judge"); process.exit(2); }
-  const model = process.env.JUDGE_MODEL || "openai/gpt-4o-mini";
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) { console.error("ANTHROPIC_API_KEY required to run the judge"); process.exit(2); }
+  const model = process.env.JUDGE_MODEL || "claude-sonnet-4-6";
   const i = process.argv.indexOf("--diff");
   const diff = i >= 0 ? readFileSync(process.argv[i + 1], "utf8") : readFileSync(0, "utf8");
 
-  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${key}`, "x-title": "arena-harness-judge" },
-    body: JSON.stringify({ model, temperature: 0, messages: [{ role: "user", content: buildPrompt(diff) }] }),
-  });
-  const data = await res.json();
-  const v = parseVerdict(data?.choices?.[0]?.message?.content ?? "");
+  const v = await callJudge(diff, { apiKey: key, model });
 
   if (process.argv.includes("--json")) console.log(JSON.stringify({ model, ...v }, null, 2));
   else {
@@ -62,5 +81,5 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     for (const r of v.reasons) console.log(`   - ${r}`);
     if (v.generalises) console.log(`   generalises? ${v.generalises}`);
   }
-  process.exit(v.verdict === "violation" ? 1 : 0);   // suspicious still proceeds (CI labels it)
+  process.exit(isBlocked(v.verdict) ? 1 : 0);   // D12: suspicious + violation both block
 }
