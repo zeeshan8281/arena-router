@@ -4,11 +4,12 @@
 // OPENROUTER_API_KEY. Commands are exported for tests; the dispatcher is at the bottom.
 import { readFileSync, writeFileSync, mkdirSync, cpSync, existsSync, readdirSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadConfig } from "../competition/scoring/config.mjs";
 import { runChecks } from "../competition/anti-abuse/checks.mjs";
+import { runSmoke, summarizeRun, reportDeltas } from "./smoke.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -50,14 +51,46 @@ export function verifyPiCmd({ root = REPO_ROOT } = {}) {
   return { ok: actual === expected, expected, actual };
 }
 
-/** Render the latest smoke --out artifacts as a cost/pass table (§6.5 `arena report`). */
+/** Real local Harbor spawn for one smoke trial → returns the Harbor run dir. */
+function harborSpawn(root, config, model, submission) {
+  return (key, { tasks, trialIndex, outDir }) => {
+    const trialOut = join(outDir, `trial-${trialIndex}-harbor`);
+    const args = ["run", "-d", config.benchmark.dataset, "--agent-import-path", "pi_agent:PiAgent", "-m", model, "-n", String(config.benchmark.concurrency), "-o", trialOut];
+    for (const t of tasks) args.push("-t", t);
+    const env = { ...process.env, OPENROUTER_API_KEY: key, PI_VENDOR_TARBALL: join(root, "vendor/pi/pi.tgz"), PI_VENDOR_SHA256: config.pi.sha256, PI_SUBMISSION_DIR: submission || "" };
+    const r = spawnSync("harbor", args, { env, stdio: ["ignore", "inherit", "inherit"] });
+    if (r.status !== 0) throw new Error(`harbor exited ${r.status}`);
+    const sub = readdirSync(trialOut).map((d) => join(trialOut, d)).sort();
+    return sub[sub.length - 1]; // newest run dir under trialOut
+  };
+}
+
+/** Run the smoke set locally with the participant's own key (§6.5). */
+export function smokeCmd({ trials, tasks, model, submission, outDir, root = REPO_ROOT } = {}) {
+  const config = loadConfig(join(root, "competition.toml"));
+  const runOut = outDir ?? join(root, ".arena", "out", "latest");
+  const m = model ?? `openrouter/${config.models.baseline_model}`;
+  return runSmoke({
+    key: process.env.OPENROUTER_API_KEY,
+    trials: trials ?? config.smoke.trials,
+    tasks: tasks ?? config.smoke.tasks,
+    outDir: runOut,
+    spawn: harborSpawn(root, config, m, submission),
+  });
+}
+
+/** Render the latest run's cost/pass table with deltas vs the previous run (§6.5). */
 export function reportCmd({ outDir, root = REPO_ROOT } = {}) {
   const base = outDir ?? join(root, ".arena", "out");
-  if (!existsSync(base)) return { runs: [], text: "no artifacts yet — run `arena smoke --out <dir>` first" };
-  const files = readdirSync(base).filter((f) => f.endsWith(".json")).sort();
-  const runs = files.map((f) => JSON.parse(readFileSync(join(base, f), "utf8")));
-  const rows = runs.map((r) => `${r.run_id ?? "?"}\tpass ${r.median_pass_count ?? "?"}\t$${r.median_billed_usd ?? "?"}`);
-  return { runs, text: ["run\tpass\tcost", ...rows].join("\n") };
+  if (!existsSync(base)) return { text: "no artifacts yet — run `arena smoke` first" };
+  // run dirs = subdirs holding trial-*.json; newest two compared
+  const runDirs = readdirSync(base, { withFileTypes: true })
+    .filter((d) => d.isDirectory() && existsSync(join(base, d.name, "trial-0.json")))
+    .map((d) => join(base, d.name)).sort();
+  if (!runDirs.length) return { text: "no completed runs yet — run `arena smoke` first" };
+  const cur = summarizeRun(runDirs[runDirs.length - 1]);
+  const prev = runDirs.length > 1 ? summarizeRun(runDirs[runDirs.length - 2]) : null;
+  return { text: reportDeltas(cur, prev), current: cur, previous: prev };
 }
 
 // ---- dispatcher ----
@@ -77,7 +110,17 @@ function main(argv) {
       case "check": { const r = checkCmd({ author: get("--author") }); console.log(r.block ? `BLOCK: ${r.reason}` : `OK (author=${r.author})`); process.exit(r.block ? 1 : 0); }
       case "verify-pi": { const r = verifyPiCmd(); console.log(r.ok ? `✓ vendored pi matches (${r.expected.slice(0, 12)}…)` : `✗ MISMATCH expected ${r.expected} got ${r.actual}`); process.exit(r.ok ? 0 : 1); }
       case "report": { console.log(reportCmd({ outDir: get("--out") }).text); break; }
-      case "smoke": { console.error("`arena smoke` runs Harbor locally with your OPENROUTER_API_KEY.\nSee competition/LOCAL_SETUP.md; the runner wiring lives in competition/runner.mjs.\n(Not yet wired into the kit — needs a key to validate.)"); process.exit(2); }
+      case "smoke": {
+        if (!process.env.OPENROUTER_API_KEY) { console.error("set OPENROUTER_API_KEY (your own inference key) to run a local smoke"); process.exit(2); }
+        const tasksArg = get("--tasks"); const trialsArg = get("--trials");
+        const r = smokeCmd({
+          trials: trialsArg ? Number(trialsArg) : undefined,
+          tasks: tasksArg ? tasksArg.split(",").map((s) => s.trim()) : undefined,
+          model: get("--model"), submission: get("--submission"), outDir: get("--out"),
+        });
+        console.log(`smoke: median pass ${r.median_pass}, median cost $${r.median_cost} (${r.trials.length} trials)`);
+        break;
+      }
       default: console.log(HELP);
     }
   } catch (e) { console.error(`arena: ${e.message}`); process.exit(1); }

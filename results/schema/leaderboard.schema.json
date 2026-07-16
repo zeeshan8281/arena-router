@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/zeeshan8281/arena-router/results/schema/leaderboard.schema.json",
+  "title": "Arena leaderboard",
+  "description": "Regenerated after every full run (spec §7.2) by results.mjs generateLeaderboard().",
+  "type": "object",
+  "required": ["schema_version", "eligibility_bar", "ranked", "below_bar"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "eligibility_bar": { "type": "number", "description": "full-run pass count required to qualify (D16); -1 until the probe freezes it" },
+    "baseline": {
+      "type": ["object", "null"],
+      "properties": {
+        "pass": { "type": "number" },
+        "cost_usd": { "type": "number" },
+        "run_id": { "type": "string" }
+      }
+    },
+    "ranked": {
+      "type": "array",
+      "description": "qualified entries, cheapest billed dollars first",
+      "items": {
+        "type": "object",
+        "required": ["participant", "pass", "cost_usd", "qualified"],
+        "properties": {
+          "rank": { "type": ["integer", "null"] },
+          "participant": { "type": "string" },
+          "entry_name": { "type": ["string", "null"] },
+          "pass": { "type": "number" },
+          "cost_usd": { "type": "number" },
+          "qualified": { "const": true },
+          "run_id": { "type": "string" }
+        }
+      }
+    },
+    "below_bar": {
+      "type": "array",
+      "description": "best run per author that missed the bar, highest pass first",
+      "items": {
+        "type": "object",
+        "required": ["participant", "pass"],
+        "properties": {
+          "participant": { "type": "string" },
+          "entry_name": { "type": ["string", "null"] },
+          "pass": { "type": "number" },
+          "qualified": { "const": false }
+        }
+      }
+    }
+  }
+}

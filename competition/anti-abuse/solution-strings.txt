@@ -1,14 +1,53 @@
 # Curated distinctive solution strings — the second half of the static tripwire
 # (ci-anti-abuse §3a). One string per line; blank lines and #-comments ignored.
-# The tripwire flags any submission diff whose ADDED lines contain one of these.
+# The tripwire flags any submission diff whose ADDED lines contain one of these
+# (case-insensitive substring match).
 #
-# What belongs here: strings that only someone who read a task's solution/ would
-# know — specific flags, expected-output literals, hard-coded hashes/keys,
-# distinctive constants from the reference solution. NOT generic tokens.
+# What belongs here: strings that only someone who read a task's solution/ or
+# tests/ would know — cracked passwords, hard-coded flags, decryption
+# passphrases, distinctive expected-answer literals. NOT generic tokens (common
+# constants, calendar dates, real public model names, function names, values the
+# task's own instruction.md hands to the solver).
 #
-# Populate from the registry (maintainer task): for each of the 89 tasks in
-# laude-institute/terminal-bench-2, pull solution/ + tests/ and pick the few
-# longest/most-unique literals that would never appear in a general harness.
-# Seeded empty on purpose — task-id matching (task-ids.txt) already covers lazy
-# embedding; solution strings catch the obfuscated case and are added as we find
-# real attempts. Keep entries specific enough to avoid false positives.
+# Source: harbor-framework/terminal-bench-2 (formerly laude-institute), task
+# dirs at repo root — each has solution/solve.sh + tests/test_outputs.py.
+# Every entry below was verified to be a HIDDEN answer: present in solution/ or
+# tests/ but NOT in the task's instruction.md (so it can't legitimately appear
+# in an honest submission). Curated / high-signal only — a false positive here
+# blocks a real PR.
+# Compiled: 2026-07-17.
+#
+# Deliberately EXCLUDED as too generic / legitimately-present:
+#   - count-dataset-tokens answer "79586" (bare 5-digit int, false-positives)
+#   - regex-log expected dates (2025-01-09, ... — ordinary calendar dates)
+#   - db-wal-recovery record values (fig/grape/cherry/honeydew/150/250 — common)
+#   - nginx-request-logging "Welcome to the benchmark webserver" / "Page not
+#     found - Please check your URL" (both quoted verbatim in instruction.md)
+#   - mteb-leaderboard "GritLM/GritLM-7B", openssl "dev-internal.company.local"
+#     (real public identifiers the solver is told to produce/use)
+#   - fix-code-vulnerability "cwe-93" (a real, common CWE id)
+#   - input-integrity / "database has been modified" verification hashes
+#     (fixture checksums, not answers — would fire on legitimate test fixtures)
+
+# crack-7z-hash — password that unlocks secrets.7z; contents = "honeybear"
+honeybear
+7z x -p1998
+
+# password-recovery — the 23-char password reconstructed from the disk image
+8XDP5Q2RT9ZK7VB3BV4WW54
+
+# git-leak-recovery — secret hidden in a dangling commit + the marker commit
+secret[lost_and_found_in_git]
+chore: init e665d1a2-04a7-4e61-b523-e897e231d9cc
+
+# vulnerable-secret — flag embedded in the binary, leaked via buffer overflow
+FLAG{b4ff3r_0v3rfl0w_m4st3r_k3y_2024}
+
+# gcode-to-text — flag decoded from the toolpath
+flag{gc0d3_iz_ch4LLenGiNg}
+
+# adaptive-rejection-sampler — passphrase for the protected/*.enc archive
+adaptive-rejection-sampler-2024
+
+# chess-best-move — the two checkmate-in-one moves (both required, distinctive pair)
+sorted(["g2g4", "e2e4"])
