@@ -21,14 +21,16 @@ Plus an echo mode so CI can exercise the harness plumbing without a key.
 ## Validated
 - **Offline (`pytest test_pi_agent.py`, 6 tests):** model parsing, run-command shape,
   provider-key passthrough, echo switch, D20 install-template content, checksum gate.
-- **Live, key-free:** `harbor run ... -a oracle` passes end-to-end (reward 1.0 on `fix-git`),
-  proving harbor→Docker→verifier. See `competition/LOCAL_SETUP.md`.
+- **Live, key-free (oracle):** `harbor run ... -a oracle` passes end-to-end (reward 1.0 on
+  `fix-git`), proving harbor→Docker→verifier. See `competition/LOCAL_SETUP.md`.
+- **Live, key-free (D20 install path):** echo-mode run against `fix-git` with the vendored
+  tarball — `setup()` uploaded `vendor/pi/pi.tgz`, checksum passed, in-container
+  `npm install -g /installed-agent/pi.tgz` succeeded ("added 127 packages", `pi --help` OK),
+  Errors = 0. The whole install+run+verify plumbing works from vendored source only.
 
-## Not yet validated (needs a key and/or WP1)
+## Not yet validated (needs a key)
 - The pi run path against a real model → needs `OPENROUTER_API_KEY` (baseline probe).
-- `setup()` tarball upload + in-container install → needs WP1 to vendor pi into
-  `vendor/pi/` (as `pi.tgz`) and record `pi.sha256` in `competition.toml`, plus one live
-  Docker run. Apply the Harbor `upload_dir` patch first (LOCAL_SETUP.md).
+  Everything up to the model call is proven; this is the one remaining gap.
 
 ## Harbor pin
 `harbor==0.1.18` (pyproject). harbor ≥0.18 rewrote `BaseInstalledAgent` (no `ExecInput` /
