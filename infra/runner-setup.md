@@ -42,8 +42,7 @@ The runner and squid come up together via `docker compose` (see
 - **Ephemeral:** the runner is configured ephemeral so each job starts from a
   clean runner and cannot inherit state from a prior run.
 - **Secrets:** provided by the `eval-runner` GitHub environment
-  (`OPENROUTER_MANAGEMENT_KEY`, `ANTHROPIC_API_KEY`, `RESULTS_SIGNING_KEY`,
-  `RESULTS_BOT_TOKEN` per §3). They are injected by Actions at job time — do NOT
+  (`OPENROUTER_MANAGEMENT_KEY`, `ANTHROPIC_API_KEY`, `RESULTS_BOT_TOKEN` per §3). They are injected by Actions at job time — do NOT
   bake them into the box image or compose env.
 
 Bring-up:

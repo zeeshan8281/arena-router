@@ -8,7 +8,6 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawnSync } from "node:child_process";
 import { leaderboardEntry, rankLeaderboard } from "./score.mjs";
 import { readRuns } from "./budget.mjs";
 import { loadConfig } from "./config.mjs";
@@ -42,17 +41,16 @@ export function buildRunResult({ runId, runType, pr, author, entryName, submissi
 
 // ---- H4: results integrity ----
 // The run files committed to main are the leaderboard's source of truth. readRuns /
-// generateLeaderboard currently TRUST those files as-is — there is no cryptographic
-// verification of authorship on read (signIfConfigured, below, is write-only and nothing
-// verifies the signature). The real guarantee that a PR cannot forge a favorable run is
-// enforced OUT OF BAND: CI must reject any PR that writes under results/runs/ (path
-// containment, owned by the CI agent). Only the trusted CI job may commit run files.
+// generateLeaderboard TRUST those files as-is — there is no cryptographic verification
+// of authorship. The guarantee that a PR cannot forge a favorable run is enforced OUT
+// OF BAND: branch protection + CI must reject any PR that writes under results/runs/
+// (path containment, owned by the CI agent). Only the trusted CI job may commit run files.
 //
 // As cheap in-band tamper-evidence we embed a `content_sha256` over the run's own body:
 // verifyRun() recomputes it and flags a file whose body no longer matches its recorded
 // digest (catches accidental/naive edits — NOT a forgery defense on its own, since an
 // attacker who can rewrite the body can recompute the digest; that's what the CI path
-// gate is for). A real signature scheme needs key infrastructure that isn't wired yet.
+// gate is for).
 
 /** sha256 over the run body with `content_sha256` excluded (stable, key-order independent). */
 export function hashRun(result) {
@@ -61,13 +59,12 @@ export function hashRun(result) {
   return createHash("sha256").update(canonical).digest("hex");
 }
 
-/** Write a run result to results/runs/<run-id>.json with a content digest; best-effort minisign. */
+/** Write a run result to results/runs/<run-id>.json with a content digest. */
 export function writeRun(runsDir, result) {
   mkdirSync(runsDir, { recursive: true });
   const stamped = { ...result, content_sha256: hashRun(result) };
   const path = join(runsDir, `${stamped.run_id}.json`);
   writeFileSync(path, JSON.stringify(stamped, null, 2) + "\n");
-  signIfConfigured(path);
   return path;
 }
 
@@ -76,18 +73,6 @@ export function writeRun(runsDir, result) {
 export function verifyRun(result) {
   if (!result || !result.content_sha256) return true; // no digest to verify against
   return hashRun(result) === result.content_sha256;
-}
-
-// Signing is optional. Off unless RESULTS_SIGNING_KEY is set AND minisign is on PATH.
-// NOTE (H4): this only PRODUCES a .minisig alongside the file — nothing in readRuns /
-// generateLeaderboard verifies it, so it is not currently a trust boundary. Kept as a
-// forward hook; the actual integrity guarantee is the CI results/runs/ path gate above.
-function signIfConfigured(path) {
-  const key = process.env.RESULTS_SIGNING_KEY;
-  if (!key) return false;
-  const r = spawnSync("minisign", ["-S", "-s", key, "-m", path], { encoding: "utf8" });
-  if (r.status !== 0) console.warn(`[results] minisign unavailable/failed, leaving ${path} unsigned`);
-  return r.status === 0;
 }
 
 /**

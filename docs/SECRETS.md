@@ -12,7 +12,6 @@ Add at: **repo → Settings → Environments → `eval-runner` → Add secret** 
 | `OPENROUTER_MANAGEMENT_KEY` | mint capped per-run keys + pull the ledger (§6.1) | smoke.yml, full-run.yml |
 | `ANTHROPIC_API_KEY` | the judge, Claude Sonnet 4.6 (§5.2, D13) | checks.yml |
 | `RESULTS_BOT_TOKEN` | fine-grained PAT, contents:write, to commit `results/` (§3) | full-run.yml, leaderboard.yml |
-| `RESULTS_SIGNING_KEY` | optional — minisign secret to sign run files (§7.1) | full-run.yml |
 
 > The account behind `OPENROUTER_MANAGEMENT_KEY` needs a **credit balance** — the probe
 > and real runs spend actual dollars through the keys it mints.
