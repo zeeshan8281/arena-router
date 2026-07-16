@@ -42,11 +42,27 @@ export function planFor(config, type) {
 
 export const keyName = (type, pr, attempt = 1) => `pr${pr ?? 0}-${type}-a${attempt}`;
 
-/** Harbor CLI args for one trial (pure — the seam tests assert this exactly). */
-export function harborArgs({ dataset, tasks, submission, model, outDir, concurrency }) {
+/** Next attempt number for (type, pr): 1 + the highest existing a<N> among committed
+ *  run files. Ensures re-running a PR writes a NEW file instead of overwriting the prior
+ *  attempt (M2 — otherwise monthlySpend would only ever see the latest attempt). */
+export function nextAttempt(runsDir, type, pr) {
+  let names;
+  try { names = readdirSync(runsDir); } catch { return 1; }
+  const re = new RegExp(`^pr${pr ?? 0}-${type}-a(\\d+)\\.json$`);
+  let max = 0;
+  for (const n of names) {
+    const m = n.match(re);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return max + 1;
+}
+
+/** Harbor CLI args for one trial (pure — the seam tests assert this exactly).
+ *  The submission dir is mounted via the PI_SUBMISSION_DIR env var (see liveDeps.runTrial),
+ *  not passed as a CLI flag, so it is not an argument here. */
+export function harborArgs({ dataset, tasks, model, outDir, concurrency }) {
   const args = ["run", "-d", dataset, "--agent-import-path", AGENT_IMPORT, "-m", model, "-n", String(concurrency), "-o", outDir];
   for (const t of tasks) args.push("-t", t);
-  if (submission) { /* submission is mounted via PI_SUBMISSION_DIR env, see runTrialLive */ }
   return args;
 }
 
@@ -58,12 +74,13 @@ export function harborArgs({ dataset, tasks, submission, model, outDir, concurre
  *   del(hash), now() -> ISO string
  * Returns the §7.1 run-result object (also written to results/runs/ by the CLI).
  */
-export async function runRun({ config, type, pr, author, submission, model, deps }) {
+export async function runRun({ config, type, pr, author, submission, model, attempt = 1, deps }) {
   assertRunnable(config, type);
   const allTasks = deps.allTasks ?? allTaskIds();
   const tasks = selectTasks(config, type, allTasks);
   const { cap, trials: nTrials, capExempt } = planFor(config, type);
   const runModel = model || config.models.baseline_model;
+  const runId = keyName(type, pr, attempt);
 
   // Budget gate (baseline is cap-exempt, §6.1).
   if (!capExempt) {
@@ -71,12 +88,18 @@ export async function runRun({ config, type, pr, author, submission, model, deps
       runs: deps.priorRuns ?? [], author, yyyymm: (deps.now?.() ?? "").slice(0, 7),
       cap: config.budget.author_monthly_usd, runType: type, nextCost: cap,
     });
-    if (!b.allowed) return voidResult({ type, pr, author, reason: b.reason, now: deps.now });
+    if (!b.allowed) return voidResult({ runId, type, pr, author, reason: b.reason, now: deps.now });
   }
 
-  const { key, hash } = await deps.mint(keyName(type, pr), cap);
+  const { key, hash } = await deps.mint(runId, cap);
   const trials = [];
   let prevCost = 0;
+  // The authoritative final reads (billed usage + generation ledger) MUST happen while the
+  // key is still alive — mirror openrouter.mjs withCappedKey (read status, THEN delete).
+  // Reading them after deletion throws and would let the unspoofable gates silently no-op.
+  let finalStatus = null;
+  let gens = null;
+  let integrityReadFailed = false;
   try {
     for (let i = 0; i < nTrials; i++) {
       const result = await deps.runTrial(key, { tasks, model: runModel, submission, trialIndex: i });
@@ -92,18 +115,26 @@ export async function runRun({ config, type, pr, author, submission, model, deps
       });
       prevCost = c.usage;
     }
+    // Final integrity reads — against the LIVE key, before teardown.
+    finalStatus = await deps.cost(hash);
+    // The key's generation records are the authoritative per-record source for the
+    // allowlist check (spec §6.1.6 "every record's model ∈ allowlist").
+    gens = deps.generations ? await deps.generations(hash) : null;
+  } catch {
+    // FAIL CLOSED: if the authoritative reads throw (e.g. the key is gone), we cannot
+    // prove BYOK-zero or that every record is allowlisted — so VOID rather than substitute
+    // self-reported / assumed-good data. (integrity.mjs also fails closed on empty input;
+    // this is defense in depth so the runner never emits a scoring run it can't back.)
+    integrityReadFailed = true;
   } finally {
     await deps.del(hash).catch(() => {});
   }
 
-  const finalStatus = await deps.cost(hash).catch(() => ({ byok_usage: 0 }));
+  if (integrityReadFailed) {
+    return voidResult({ runId, type, pr, author, reason: "integrity-read-failed", now: deps.now, startedAt: deps.startedAt });
+  }
 
-  // Pull the key's generation records — the authoritative per-record source for the
-  // allowlist check (spec §6.1.6 "every record's model ∈ allowlist"). Fall back to the
-  // configured model only if no lister is wired (keeps the check from silently passing).
-  const gens = deps.generations ? await deps.generations(hash).catch(() => null) : null;
-  const generations = gens ?? [{ model: runModel }];
-  const integrity = checkIntegrity({ generations, keyStatus: finalStatus, allowlist: config.models.allowlist });
+  const integrity = checkIntegrity({ generations: gens ?? [], keyStatus: finalStatus, allowlist: config.models.allowlist });
 
   // Attach the ledger audit trail. Per-trial attribution needs record timestamps (a
   // follow-up); for single-trial runs (full/baseline, D14) the whole run IS trial[0].
@@ -116,7 +147,7 @@ export async function runRun({ config, type, pr, author, submission, model, deps
 
   const offAllowlist = integrity.flags.some((f) => f.type === "off-allowlist" || f.type === "free-variant");
   const result = buildRunResult({
-    runId: keyName(type, pr), runType: type, pr, author,
+    runId, runType: type, pr, author,
     entryName: deps.entryName, submissionSha: deps.submissionSha,
     piVersion: config.pi.version, configSha: deps.configSha,
     startedAt: deps.startedAt, finishedAt: deps.now?.(),
@@ -137,9 +168,9 @@ export async function runRun({ config, type, pr, author, submission, model, deps
   return result;
 }
 
-function voidResult({ type, pr, author, reason, now }) {
+function voidResult({ runId, type, pr, author, reason, now, startedAt }) {
   return buildRunResult({
-    runId: keyName(type, pr), runType: type, pr, author, startedAt: now?.(), finishedAt: now?.(),
+    runId, runType: type, pr, author, startedAt: startedAt ?? now?.(), finishedAt: now?.(),
     trials: [], validity: { voided: true, void_reason: reason },
   });
 }
@@ -179,11 +210,15 @@ async function main(argv) {
   const author = get("--author", "_baseline");
   const submission = get("--submission");
   const model = get("--model");
-  const outRoot = get("--out", join(REPO_ROOT, "results", "harbor", `${type}-pr${pr ?? 0}`));
+  const runsDir = join(REPO_ROOT, "results", "runs");
+  // Real attempt number so re-running a PR writes a NEW file instead of overwriting the
+  // prior attempt (M2). A fixed run_id would let monthlySpend see only the latest attempt.
+  const attempt = nextAttempt(runsDir, type, pr);
+  const outRoot = get("--out", join(REPO_ROOT, "results", "harbor", `${type}-pr${pr ?? 0}-a${attempt}`));
 
-  const deps = { ...liveDeps({ mgmt, outRoot }), startedAt: new Date().toISOString(), priorRuns: readRuns(join(REPO_ROOT, "results", "runs")) };
-  const result = await runRun({ config, type, pr, author, submission, model, deps });
-  const path = writeRun(join(REPO_ROOT, "results", "runs"), result);
+  const deps = { ...liveDeps({ mgmt, outRoot }), startedAt: new Date().toISOString(), priorRuns: readRuns(runsDir) };
+  const result = await runRun({ config, type, pr, author, submission, model, attempt, deps });
+  const path = writeRun(runsDir, result);
   console.log(`[runner] ${type} → ${path}  pass=${result.median_pass_count} cost=$${result.median_billed_usd}`);
   if (type === "smoke") console.log(`[runner] smoke gate: ${result.smoke_gate?.pass ? "PASS" : "FAIL"} (${result.median_pass_count} vs ${config.smoke.gate})`);
   process.exit(result.validity?.voided ? 1 : 0);

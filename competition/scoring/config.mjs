@@ -7,6 +7,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ALLOWLIST } from "./integrity.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -77,8 +78,28 @@ export function parseToml(text) {
   return root;
 }
 
+/** M11: the TOML [models] allowlist and models.json are two sources of truth for the
+ *  same list — a divergence would let one check pass a model the other rejects. Assert
+ *  they hold the exact same set (order-independent) and throw on any mismatch. */
+export function assertAllowlistConsistent(config, slugs = ALLOWLIST) {
+  const toml = config?.models?.allowlist ?? [];
+  const a = new Set(toml);
+  const b = new Set(slugs);
+  const onlyToml = [...a].filter((s) => !b.has(s));
+  const onlyJson = [...b].filter((s) => !a.has(s));
+  if (onlyToml.length || onlyJson.length) {
+    throw new Error(
+      `models allowlist diverged between competition.toml and models.json — ` +
+      `only in toml: [${onlyToml.join(", ")}]; only in models.json: [${onlyJson.join(", ")}]`,
+    );
+  }
+  return true;
+}
+
 export function loadConfig(path = join(REPO_ROOT, "competition.toml")) {
-  return parseToml(readFileSync(path, "utf8"));
+  const config = parseToml(readFileSync(path, "utf8"));
+  assertAllowlistConsistent(config);
+  return config;
 }
 
 /** The TBD(probe) sentinel is -1 (spec §8). Official (non-baseline) runs are refused

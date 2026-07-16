@@ -40,6 +40,29 @@ triage-only checks (humans make the final call):
 
 See [`anti-abuse/README.md`](./anti-abuse/README.md).
 
+## Known limitation / risk — published results expose the task list
+
+Each committed `results/runs/<id>.json` includes a `pass_vector` keyed by the
+**real Terminal-Bench task names** with per-task pass/fail, and the run-detail UI
+renders that grid. This is a deliberate current tradeoff (transparent, auditable
+results) but it is in tension with the task-agnosticity rule the `anti-abuse/`
+checks enforce: it publicly reveals which tasks are in the set and exactly which
+a given harness passed or failed — a milder analog of the v1 hidden-set
+exfiltration exploit. An adversary can read the task inventory and per-task
+outcomes straight from the published leaderboard.
+
+**Status:** kept as-is for now by maintainer decision. **Mitigations** for a
+future change, when we decide the exposure outweighs the transparency benefit:
+
+- **Hash the task IDs** in `pass_vector` (e.g. HMAC with a per-competition
+  salt) so the grid still shows pass/fail counts and stable per-task columns
+  without leaking the human-readable task names.
+- **Drop the per-task vector** from the published run file entirely and expose
+  only aggregate `pass_count` / `median_pass_count`, keeping the detailed vector
+  internal to scoring.
+
+Either change is schema-only + UI-only and does not affect how runs are scored.
+
 ## Planned (not yet built)
 
 | Slice | Source | Status |

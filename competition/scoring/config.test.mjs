@@ -2,7 +2,8 @@
 // Run: node --test competition/scoring/config.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseToml, loadConfig, pendingTbd, assertRunnable } from "./config.mjs";
+import { parseToml, loadConfig, pendingTbd, assertRunnable, assertAllowlistConsistent } from "./config.mjs";
+import { ALLOWLIST } from "./integrity.mjs";
 
 test("real competition.toml round-trips", () => {
   const c = loadConfig();
@@ -18,6 +19,18 @@ test("real competition.toml round-trips", () => {
   assert.equal(c.full.cap_usd, 10);
   assert.equal(c.submission.max_bytes, 1048576);
   assert.equal(c.judge.model, "claude-sonnet-4-6");
+});
+
+test("M11: real config's TOML allowlist matches models.json exactly (loadConfig asserts it)", () => {
+  const c = loadConfig(); // throws if divergent
+  assert.deepEqual([...c.models.allowlist].sort(), [...ALLOWLIST].sort());
+  assert.equal(assertAllowlistConsistent(c), true);
+});
+
+test("M11: assertAllowlistConsistent throws on divergence", () => {
+  const c = loadConfig();
+  assert.throws(() => assertAllowlistConsistent(c, [...ALLOWLIST, "sneaky/extra-model"]), /diverged/);
+  assert.throws(() => assertAllowlistConsistent({ models: { allowlist: ["only/one"] } }), /diverged/);
 });
 
 test("multi-line arrays and inline comments parse", () => {

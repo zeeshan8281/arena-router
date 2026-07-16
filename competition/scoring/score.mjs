@@ -12,12 +12,18 @@ export function median(nums) {
   return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2;
 }
 
-/** Median pass count + median billed cost across trials (§5: median, not pass@N, not mean). */
+/** Median-TRIAL aggregation (§5: median, not pass@N, not mean). Pass and cost must
+ *  describe ONE real trial — taking each over an independently-sorted column can report
+ *  a (pass, cost) pair that no single trial produced (M9). So: pick the trial at the
+ *  median pass position (lower-middle for an even count) and report THAT trial's cost. */
 export function aggregate(trials) {
+  const ordered = [...trials].sort((a, b) => a.passed - b.passed);
+  const n = ordered.length;
+  const medianTrial = n ? ordered[Math.floor((n - 1) / 2)] : { passed: 0, cost_usd: 0 };
   return {
-    trials: trials.length,
+    trials: n,
     median_pass: median(trials.map((t) => t.passed)),
-    median_cost: Number(median(trials.map((t) => t.cost_usd)).toFixed(4)),
+    median_cost: Number((medianTrial.cost_usd || 0).toFixed(4)),
   };
 }
 
@@ -40,10 +46,14 @@ export function leaderboardEntry({ participant, median_pass, median_cost, baseli
   };
 }
 
-/** Rank qualified entries cheapest-first; unqualified/void sink to the bottom. */
+/** Rank qualified entries cheapest-first; unqualified/void sink to the bottom.
+ *  L1: break exact cost ties deterministically (by run_id, then participant) so ordering
+ *  never depends on input/readdir order. */
 export function rankLeaderboard(entries) {
   return [...entries].sort((a, b) => {
     if (a.qualified !== b.qualified) return a.qualified ? -1 : 1;
-    return a.cost_usd - b.cost_usd;
+    if (a.cost_usd !== b.cost_usd) return a.cost_usd - b.cost_usd;
+    return String(a.run_id ?? a.participant ?? "").localeCompare(String(b.run_id ?? b.participant ?? "")) ||
+      String(a.participant ?? "").localeCompare(String(b.participant ?? ""));
   }).map((e, i) => ({ rank: e.qualified ? i + 1 : null, ...e }));
 }

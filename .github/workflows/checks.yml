@@ -22,9 +22,14 @@ on:
   pull_request_target:
     types: [opened, synchronize, reopened]
 
-# One in-flight checks run per PR; new pushes supersede stale ones.
+# One in-flight checks run per PR *per event*. Both pull_request and
+# pull_request_target populate github.event.pull_request.number, so WITHOUT the
+# event name in the group the `static` (pull_request) and `judge`
+# (pull_request_target) runs would share a group and cancel each other
+# (SEC H7). Keying on event name keeps the two independent; within one event, a
+# new push still supersedes the stale run.
 concurrency:
-  group: checks-${{ github.event.pull_request.number }}
+  group: checks-${{ github.event_name }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 permissions:

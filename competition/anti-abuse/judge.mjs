@@ -20,24 +20,41 @@ export const RULE =
   "branching (e.g. 'if the prompt mentions <X>, do <Y>'). The harness must be " +
   "generally useful, not tuned to the 89 scored tasks.";
 
+/** Max diff bytes sent to the judge; past this the judge is blind, so we force a review. */
+export const DIFF_CAP = 60000;
+
+/** Normalize a verdict object: derive human `rationale` (string) + `evidence` (array)
+ *  from the model's `reasons`, keeping the original keys for backward-compat (M4b). */
+function withRenderFields(v) {
+  const reasons = Array.isArray(v.reasons) ? v.reasons : [];
+  return { ...v, reasons, rationale: reasons.join("; "), evidence: reasons };
+}
+
 /** Extract the judge's JSON verdict from a model reply; safe defaults on garbage. */
 export function parseVerdict(text) {
   const m = (text || "").match(/\{[\s\S]*\}/);
-  if (!m) return { verdict: "suspicious", confidence: 0, reasons: ["unparseable judge reply"], generalises: "" };
+  if (!m) return withRenderFields({ verdict: "suspicious", confidence: 0, reasons: ["unparseable judge reply"], generalises: "" });
   try {
     const v = JSON.parse(m[0]);
     const verdict = ["clean", "suspicious", "violation"].includes(v.verdict) ? v.verdict : "suspicious";
-    return { verdict, confidence: Number(v.confidence) || 0, reasons: Array.isArray(v.reasons) ? v.reasons : [], generalises: v.generalises || "" };
+    return withRenderFields({ verdict, confidence: Number(v.confidence) || 0, reasons: Array.isArray(v.reasons) ? v.reasons : [], generalises: v.generalises || "" });
   } catch {
-    return { verdict: "suspicious", confidence: 0, reasons: ["invalid judge JSON"], generalises: "" };
+    return withRenderFields({ verdict: "suspicious", confidence: 0, reasons: ["invalid judge JSON"], generalises: "" });
   }
 }
 
+/** True when the diff was too big to send whole (so the judge saw only a prefix). */
+export const isTruncated = (diff) => (diff || "").length > DIFF_CAP;
+
 export function buildPrompt(diff) {
+  const truncated = isTruncated(diff);
+  const note = truncated
+    ? `\n\nNOTE: the diff below was truncated to the first ${DIFF_CAP} bytes; content after the cap is NOT shown.`
+    : "";
   return readFileSync(join(HERE, "judge-prompt.md"), "utf8")
     .split("---\n").slice(1).join("---\n")          // strip the doc header, keep the prompt body
-    .replace("{{RULE}}", RULE)
-    .replace("{{DIFF}}", diff.slice(0, 60000));      // cap the diff sent to the judge
+    .replace("{{RULE}}", RULE + note)
+    .replace("{{DIFF}}", diff.slice(0, DIFF_CAP));   // cap the diff sent to the judge
 }
 
 /** blocked verdicts (D12): only `clean` proceeds. */
@@ -62,7 +79,13 @@ export async function callJudge(diff, { apiKey, model = "claude-sonnet-4-6", fet
   });
   const data = await res.json();
   const text = Array.isArray(data?.content) ? data.content.map((b) => b.text || "").join("") : "";
-  return parseVerdict(text);
+  const v = parseVerdict(text);
+  // M4a: the judge only saw a prefix of an over-cap diff — answers could hide past the
+  // cut. Never let such a run auto-clean; force it to a human-reviewable suspicious.
+  if (isTruncated(diff) && v.verdict === "clean") {
+    return withRenderFields({ ...v, verdict: "suspicious", reasons: [...v.reasons, "diff-truncated"] });
+  }
+  return v;
 }
 
 // ── surfacing + verdict cache (spec §5.3) ──

@@ -16,11 +16,15 @@ harbor run -d terminal-bench@2.0 -t <task> \
 Forked from `badlogic/pi-terminal-bench`. Substantive change = **D20**: pi is installed
 from the vendored tarball only (`install-pi.sh.j2` → `npm install -g /installed-agent/pi.tgz`),
 never fetched from the npm registry, and `setup()` checksum-gates the tarball before upload.
-Plus an echo mode so CI can exercise the harness plumbing without a key.
+The gate is **fail-closed** (SEC C2b): a missing/blank `PI_VENDOR_TARBALL` or
+`PI_VENDOR_SHA256` raises and refuses to install, and `install-pi.sh.j2` re-verifies the
+sha256 (`sha256sum -c`) before `npm install` (defense in depth). Plus an echo mode so CI
+can exercise the harness plumbing without a key.
 
 ## Validated
-- **Offline (`pytest test_pi_agent.py`, 6 tests):** model parsing, run-command shape,
-  provider-key passthrough, echo switch, D20 install-template content, checksum gate.
+- **Offline (`pytest test_pi_agent.py`, 7 tests):** model parsing, run-command shape,
+  provider-key passthrough, echo switch, D20 install-template content, the fail-closed
+  checksum gate, and the install-template sha256 verification.
 - **Live, key-free (oracle):** `harbor run ... -a oracle` passes end-to-end (reward 1.0 on
   `fix-git`), proving harbor→Docker→verifier. See `competition/LOCAL_SETUP.md`.
 - **Live, key-free (D20 install path):** echo-mode run against `fix-git` with the vendored

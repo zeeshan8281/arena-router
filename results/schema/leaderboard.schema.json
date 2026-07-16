@@ -5,11 +5,14 @@
   "description": "Regenerated after every full run (spec §7.2) by results.mjs generateLeaderboard().",
   "type": "object",
   "required": ["schema_version", "eligibility_bar", "ranked", "below_bar"],
+  "additionalProperties": false,
   "properties": {
     "schema_version": { "const": 1 },
     "eligibility_bar": { "type": "number", "description": "full-run pass count required to qualify (D16); -1 until the probe freezes it" },
     "baseline": {
       "type": ["object", "null"],
+      "required": ["pass", "cost_usd", "run_id"],
+      "additionalProperties": false,
       "properties": {
         "pass": { "type": "number" },
         "cost_usd": { "type": "number" },
@@ -22,6 +25,7 @@
       "items": {
         "type": "object",
         "required": ["participant", "pass", "cost_usd", "qualified"],
+        "additionalProperties": false,
         "properties": {
           "rank": { "type": ["integer", "null"] },
           "participant": { "type": "string" },
@@ -38,12 +42,16 @@
       "description": "best run per author that missed the bar, highest pass first",
       "items": {
         "type": "object",
-        "required": ["participant", "pass"],
+        "required": ["participant", "pass", "qualified"],
+        "additionalProperties": false,
         "properties": {
+          "rank": { "type": "null" },
           "participant": { "type": "string" },
           "entry_name": { "type": ["string", "null"] },
           "pass": { "type": "number" },
-          "qualified": { "const": false }
+          "cost_usd": { "type": "number" },
+          "qualified": { "const": false },
+          "run_id": { "type": "string" }
         }
       }
     }

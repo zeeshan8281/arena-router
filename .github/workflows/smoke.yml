@@ -1,69 +1,183 @@
 # smoke.yml — Stage 2: smoke gate on the self-hosted eval runner (spec §6).
 #
-# Gated behind checks.yml (static + judge must be green): this workflow triggers
-# on `workflow_run` completion of `checks` and self-cancels unless that run
-# concluded success (spec §5.3 — smoke/full `needs:` the judge check). It mints a
-# $1.50-capped key, runs the 16-task smoke set median-of-3 on the eval box, pulls
-# the ledger, gates on pass count, and on pass dispatches full-run.yml (D6).
+# Gated behind checks.yml — BOTH the `static` job (pull_request run) AND the
+# `harness-judge` check run (pull_request_target run) must have concluded success
+# for the PR head SHA before any paid/self-hosted work starts. See the `gate` job.
+#
+# WHY A DEDICATED GATE JOB (SEC C1): checks.yml runs the SAME file on both
+# `pull_request` (→ `static` only) and `pull_request_target` (→ `judge` only), so
+# there are TWO checks runs per push. A `workflow_run.conclusion == 'success'`
+# check alone is NOT a real gate: the pull_request run concludes SUCCESS even when
+# the judge would BLOCK (a skipped `judge` job never fails that run), so trusting
+# the single workflow_run.conclusion would let smoke fire on a PR the judge
+# rejected. We therefore IGNORE the bare conclusion and JOIN both signals via the
+# GitHub API, keyed on the PR head SHA, and FAIL CLOSED if either is missing or
+# not success.
+#
+# DEDUP (SEC M8): both checks runs emit a `workflow_run` completion, which would
+# otherwise enqueue smoke twice (→ two org-funded runs). We drive smoke off
+# exactly ONE of them — the `pull_request` (static) completion — and the gate
+# independently verifies the judge check run via API. The `pull_request` run is
+# chosen deliberately: its `workflow_run.head_sha` is the PR HEAD commit (whereas
+# a `pull_request_target` run reports the BASE sha — the classic gotcha — which
+# would misalign the SHA join), and since `static` is the only non-skipped job in
+# that run, its `conclusion == 'success'` genuinely means static passed. If
+# `workflow_run.event` is ever absent/empty the `if` is false and smoke simply
+# does not fire (fail safe — no paid run, no bypass; maintainers use
+# workflow_dispatch).
 name: smoke
 
 on:
-  # Chained after checks succeed. workflow_run gives us the trusted default-branch
-  # copy of this workflow while still referencing the PR that was checked.
+  # Chained after checks. workflow_run gives us the trusted default-branch copy
+  # of this workflow while still referencing the PR that was checked. We proceed
+  # only for the pull_request (static) completion — see DEDUP above.
   workflow_run:
     workflows: [checks]
     types: [completed]
-  # Manual re-run / maintainer path.
+  # Manual re-run / maintainer path. Still runs the full gate (fail closed).
   workflow_dispatch:
     inputs:
       pr:     { description: "PR number", required: true }
       author: { description: "PR author github login", required: true }
 
 # Per-author group so one author's runs queue (never cancel) but different
-# authors run independently (spec §6.1.1 — smoke keyed per-author, queued).
+# authors run independently (spec §6.1.1). The head SHA is folded in so a
+# re-trigger for the SAME commit coalesces instead of enqueuing a duplicate
+# paid run (SEC M8 belt-and-suspenders on top of the single-event dedup above).
 concurrency:
-  group: smoke-${{ github.event.workflow_run.head_repository.owner.login || github.event.inputs.author }}
+  group: smoke-${{ github.event.workflow_run.head_repository.owner.login || github.event.inputs.author }}-${{ github.event.workflow_run.head_sha || github.event.inputs.pr }}
   cancel-in-progress: false
 
 permissions:
   contents: read
-  actions: write          # to dispatch full-run.yml on pass
+  actions: read           # read checks.yml runs + their jobs for the gate
+  checks: read            # read the harness-judge check run for the gate
 
 jobs:
-  smoke:
-    # Only proceed when the upstream checks run actually passed (spec §5.3 gate).
+  # ── SEC C1 gate: BOTH static AND judge must be green for the head SHA ────────
+  # Runs on a GitHub-hosted runner with NO paid/self-hosted resources and NO
+  # inference/management secrets. Its only job is the fail-closed API join; the
+  # expensive `smoke` job `needs:` it, so nothing paid starts unless it passes.
+  gate:
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
-    runs-on: [self-hosted, eval]     # dedicated eval box (spec §6.3/D9)
-    environment: eval-runner          # OPENROUTER_MANAGEMENT_KEY lives here (§3)
+      (github.event.workflow_run.event == 'pull_request' &&
+       github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
     outputs:
-      passed: ${{ steps.smoke.outputs.passed }}
       pr: ${{ steps.ctx.outputs.pr }}
       author: ${{ steps.ctx.outputs.author }}
+      head_sha: ${{ steps.ctx.outputs.head_sha }}
     steps:
-      # Resolve PR + author from either trigger. For workflow_run we read the
-      # PR number off the triggering run's payload; author = head repo owner.
+      # Resolve PR + author + the head SHA we will gate on. For workflow_run the
+      # triggering run's head_sha IS the PR head commit; for workflow_dispatch we
+      # read the PR head SHA authoritatively from the PR object.
       - name: Resolve PR context
         id: ctx
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "pr=${{ github.event.inputs.pr }}" >> "$GITHUB_OUTPUT"
-            echo "author=${{ github.event.inputs.author }}" >> "$GITHUB_OUTPUT"
+            PR="${{ github.event.inputs.pr }}"
+            AUTHOR="${{ github.event.inputs.author }}"
+            HEAD_SHA="$(gh api "repos/${{ github.repository }}/pulls/$PR" --jq '.head.sha')"
           else
-            PR="$(gh api "repos/${{ github.repository }}/commits/${{ github.event.workflow_run.head_sha }}/pulls" \
-              --jq '.[0].number')"
-            echo "pr=$PR" >> "$GITHUB_OUTPUT"
-            echo "author=${{ github.event.workflow_run.head_repository.owner.login }}" >> "$GITHUB_OUTPUT"
+            HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
+            PR="$(gh api "repos/${{ github.repository }}/commits/$HEAD_SHA/pulls" --jq '.[0].number')"
+            AUTHOR="${{ github.event.workflow_run.head_repository.owner.login }}"
+          fi
+          if [ -z "$PR" ] || [ -z "$HEAD_SHA" ]; then
+            echo "Could not resolve PR/head SHA — failing closed." >&2
+            exit 1
+          fi
+          echo "pr=$PR"           >> "$GITHUB_OUTPUT"
+          echo "author=$AUTHOR"   >> "$GITHUB_OUTPUT"
+          echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          echo "Gating PR #$PR ($AUTHOR) at $HEAD_SHA"
+
+      # 1. harness-judge check run MUST be completed+success for this head SHA.
+      #    (Created by the pull_request_target `judge` job in checks.yml.)
+      - name: Verify judge verdict (fail closed)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          SHA="${{ steps.ctx.outputs.head_sha }}"
+          STATUS=""; CONCLUSION=""
+          # Poll briefly in case the check run is still being published.
+          for _ in $(seq 1 30); do
+            STATUS="$(gh api "repos/${{ github.repository }}/commits/$SHA/check-runs?check_name=harness-judge" \
+              --jq '.check_runs[0].status // ""')"
+            CONCLUSION="$(gh api "repos/${{ github.repository }}/commits/$SHA/check-runs?check_name=harness-judge" \
+              --jq '.check_runs[0].conclusion // ""')"
+            [ "$STATUS" = "completed" ] && break
+            sleep 10
+          done
+          echo "harness-judge: status=$STATUS conclusion=$CONCLUSION"
+          if [ "$STATUS" != "completed" ] || [ "$CONCLUSION" != "success" ]; then
+            echo "Judge did not conclude success for $SHA — blocking (SEC C1 fail-closed)." >&2
+            exit 1
           fi
 
-      - name: Checkout PR merge ref (gated behind judge — spec §3)
+      # 2. The `static` job of the pull_request checks run MUST be success for the
+      #    same head SHA. The `pull_request` completion is our trigger so this is
+      #    already implied, but we re-verify via API (defense in depth) and, on
+      #    the workflow_dispatch path where there is no trigger run, this is the
+      #    real check. Look the run up by head_sha + event and inspect its jobs.
+      - name: Verify static checks (fail closed)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          SHA="${{ steps.ctx.outputs.head_sha }}"
+          RUN_ID=""; CONCLUSION=""
+          for _ in $(seq 1 30); do
+            RUN_ID="$(gh api \
+              "repos/${{ github.repository }}/actions/workflows/checks.yml/runs?event=pull_request&head_sha=$SHA&per_page=1" \
+              --jq '.workflow_runs[0].id // empty')"
+            if [ -n "$RUN_ID" ]; then
+              CONCLUSION="$(gh api "repos/${{ github.repository }}/actions/runs/$RUN_ID/jobs" \
+                --jq '.jobs[] | select(.name=="static") | .conclusion' | head -n1)"
+              [ -n "$CONCLUSION" ] && [ "$CONCLUSION" != "null" ] && break
+            fi
+            sleep 10
+          done
+          echo "static job: run=$RUN_ID conclusion=$CONCLUSION"
+          if [ "$CONCLUSION" != "success" ]; then
+            echo "static checks did not pass for $SHA — blocking (SEC C1 fail-closed)." >&2
+            exit 1
+          fi
+
+  smoke:
+    needs: gate
+    runs-on: [self-hosted, eval]     # dedicated eval box (spec §6.3/D9)
+    environment: eval-runner          # OPENROUTER_MANAGEMENT_KEY lives here (§3)
+    outputs:
+      passed: ${{ steps.smoke.outputs.passed }}
+      pr: ${{ needs.gate.outputs.pr }}
+      author: ${{ needs.gate.outputs.author }}
+    steps:
+      - name: Checkout PR merge ref (gated behind static + judge — spec §3 / SEC C1)
         uses: actions/checkout@v4
         with:
-          ref: refs/pull/${{ steps.ctx.outputs.pr }}/merge
+          ref: refs/pull/${{ needs.gate.outputs.pr }}/merge
           fetch-depth: 0
+
+      # TOCTOU guard (SEC C1): the gate verified a specific head SHA, but the
+      # merge ref can move if a new commit is pushed after the gate ran. If the
+      # PR head no longer matches what we gated, abort — the newer push has its
+      # own checks/judge/smoke pipeline. Never run un-gated code with secrets.
+      - name: Assert PR head matches the gated SHA
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          CURRENT="$(gh api "repos/${{ github.repository }}/pulls/${{ needs.gate.outputs.pr }}" --jq '.head.sha')"
+          if [ "$CURRENT" != "${{ needs.gate.outputs.head_sha }}" ]; then
+            echo "PR head moved ($CURRENT != ${{ needs.gate.outputs.head_sha }}); newer pipeline owns it — aborting." >&2
+            exit 1
+          fi
 
       - uses: actions/setup-node@v4
         with:
@@ -79,9 +193,9 @@ jobs:
         run: |
           if node competition/runner.mjs \
               --type smoke \
-              --pr "${{ steps.ctx.outputs.pr }}" \
-              --author "${{ steps.ctx.outputs.author }}" \
-              --submission "submissions/${{ steps.ctx.outputs.author }}"; then
+              --pr "${{ needs.gate.outputs.pr }}" \
+              --author "${{ needs.gate.outputs.author }}" \
+              --submission "submissions/${{ needs.gate.outputs.author }}"; then
             echo "passed=true" >> "$GITHUB_OUTPUT"
           else
             echo "passed=false" >> "$GITHUB_OUTPUT"

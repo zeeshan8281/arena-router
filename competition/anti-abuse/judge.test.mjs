@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseVerdict, buildPrompt, RULE, callJudge, isBlocked, verdictSha, cachedVerdict, cacheVerdict, stickyCommentBody, judgeLogLine, judgeLabel, STICKY_MARKER } from "./judge.mjs";
+import { parseVerdict, buildPrompt, RULE, callJudge, isBlocked, verdictSha, cachedVerdict, cacheVerdict, stickyCommentBody, judgeLogLine, judgeLabel, STICKY_MARKER, DIFF_CAP, isTruncated } from "./judge.mjs";
 
 test("verdict SHA cache round-trips and is diff-keyed", () => {
   const dir = mkdtempSync(join(tmpdir(), "judge-cache-"));
@@ -64,6 +64,32 @@ test("garbage / no JSON defaults to suspicious (fail cautious)", () => {
 
 test("unknown verdict value is coerced to suspicious", () => {
   assert.equal(parseVerdict('{"verdict":"totally-fine"}').verdict, "suspicious");
+});
+
+test("M4b: parseVerdict emits rationale + evidence and keeps reasons", () => {
+  const v = parseVerdict('{"verdict":"violation","confidence":0.9,"reasons":["hardcodes fix-git","branches on task"]}');
+  assert.deepEqual(v.evidence, ["hardcodes fix-git", "branches on task"]);
+  assert.equal(v.rationale, "hardcodes fix-git; branches on task");
+  assert.deepEqual(v.reasons, ["hardcodes fix-git", "branches on task"]); // backward-compat
+});
+
+test("M4a: an over-cap diff that the model calls clean is forced to suspicious", async () => {
+  const big = "+".repeat(DIFF_CAP + 100);
+  assert.equal(isTruncated(big), true);
+  const fetchImpl = async () => ({ json: async () => ({ content: [{ type: "text", text: '{"verdict":"clean","confidence":0.99,"reasons":[]}' }] }) });
+  const v = await callJudge(big, { apiKey: "k", fetchImpl });
+  assert.equal(v.verdict, "suspicious");
+  assert.ok(v.reasons.includes("diff-truncated"));
+  // and the prompt tells the model it was truncated
+  assert.match(buildPrompt(big), /truncated/);
+});
+
+test("M4a: a within-cap clean diff stays clean", async () => {
+  const small = "+ small diff";
+  assert.equal(isTruncated(small), false);
+  const fetchImpl = async () => ({ json: async () => ({ content: [{ type: "text", text: '{"verdict":"clean","confidence":0.9,"reasons":[]}' }] }) });
+  const v = await callJudge(small, { apiKey: "k", fetchImpl });
+  assert.equal(v.verdict, "clean");
 });
 
 test("prompt embeds the rule and the diff, header stripped", () => {
