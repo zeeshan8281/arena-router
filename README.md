@@ -52,7 +52,7 @@ All 12 work packages implemented to the limit of what's possible without keys/ha
 | **`competition/anti-abuse/`** — checks, tripwire, judge (WP4/5) | ✅ judge → Anthropic (D13); tripwire strings curated |
 | **`competition/scoring/`** + `runner.mjs` — ledger/integrity/budget/results/runner (WP3/6/8) | ✅ built + tested; live cost-ledger validation needs a key |
 | **`kit/`** — `arena` CLI + skill (WP10/12) | ✅ init/check/verify-pi/smoke/report; smoke spawn needs a key at runtime |
-| **`web/`** — static leaderboard + run views (WP9) | ✅ additive, reads `results/*.json` |
+| **`ui/`** — v2 React SPA (WP9) + `web/` static fallback | ✅ leaderboard + run-detail reading `results/*.json`; v1 attestation/ethers removed, OAuth kept |
 | **`.github/workflows/`** + `infra/` (WP6/7) | 🟡 written; unrun (need the eval box + secrets) |
 | Baseline probe → freeze gate numbers (WP11) | ⛔ needs an OpenRouter key |
 
