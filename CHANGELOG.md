@@ -19,13 +19,14 @@ _Last updated: 2026-07-17._
 | 7 | Eval box + egress | 🟡 | `infra/` (squid allowlist, internal-network compose, runner-setup runbook) | not provisioned; empirical 89-task allowlist derivation pending (log-only run) |
 | 8 | Results + leaderboard | ✅ | `scoring/results.mjs` (run-result assembly, leaderboard gen, optional minisign) + `harbor-results.mjs` (harbor→scoring parser, tested on real output) | JSON-Schema export not emitted; signing is a stub (off unless a signer is configured) |
 | 9 | Web UI rewire | ⬜ | — | needs the repo pivot; carry over OAuth, point at `results/` JSON |
-| 10 | Participant kit | 🟡 | `kit/skill/SKILL.md`, `submissions/_template/` (manifest + quickstart) | the `arena` CLI (`init`/`check`/`smoke`/`report`/`verify-pi`) not built yet |
+| 10 | Participant kit | 🟡 | `kit/arena.mjs` — `init`/`check`/`verify-pi`/`report` built + tested; `kit/skill/SKILL.md`, `submissions/_template/` | `arena smoke` is a stub (needs a key to wire the local Harbor run) |
 | 11 | Baseline probe + config freeze | ⛔ | probe path exists via `runner.mjs` + `config.assertRunnable` exemption | needs an OpenRouter key; fills `smoke.gate` + `full.eligibility_bar` (the `-1` sentinels) |
 | 12 | Improvement-loop skill | ✅ | `kit/skill/SKILL.md` — minimal one-pager (revised D22) | — |
 
-**Runner (§6.1, the orchestrator WP6 depends on):** 🟡 in progress — wires
-budget → mint capped key → spawn harbor → `parseHarborResult` → ledger pull → integrity
-→ results. Harbor spawn/parse validated against real output; live run needs a key.
+**Runner (§6.1, the orchestrator WP6 depends on):** ✅ built + tested — `competition/runner.mjs`
+wires config gate → budget → mint capped key → Harbor trials → `parseHarborResult` → ledger
+cost deltas → integrity → results JSON. 5 orchestration tests (all seams mocked). Live run
+needs a key; per-generation allowlist enforcement (transcript gen-IDs) is a marked follow-up.
 
 ## Blocked on you (not on code)
 - **OpenRouter management key** → unblocks WP3 live-validation, WP11 baseline probe, real runs.
@@ -33,9 +34,10 @@ budget → mint capped key → spawn harbor → `parseHarborResult` → ledger p
 - **Repo-pivot go-ahead** → WP1 teardown, WP9 web, and moving `competition/*.mjs` into `pipeline/`.
 
 ## Test status
-`node --test $(find competition -name '*.test.mjs')` → 37 pass · `pytest agent/` → 6 pass.
+`node --test $(find competition kit -name '*.test.mjs')` → 46 pass · `pytest agent/` → 6 pass.
 
 ## Commit trail (v2 branch)
+- WP6 runner + WP10 kit CLI (init/check/verify-pi/report)
 - `dce005e` WP5 judge → Anthropic (D13/D12)
 - `e15b399` pipeline core (config/budget/checks/results) + CI/infra/kit scaffolds
 - `c90e264` harbor result.json parser (harbor→scoring seam)

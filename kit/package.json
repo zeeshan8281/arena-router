@@ -1,0 +1,8 @@
+{
+  "name": "arena-kit",
+  "version": "0.1.0",
+  "description": "AutoRouter Arena participant kit — the `arena` CLI (spec §6.5)",
+  "type": "module",
+  "bin": { "arena": "./arena.mjs" },
+  "scripts": { "test": "node --test arena.test.mjs" }
+}
