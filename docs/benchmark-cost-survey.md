@@ -58,6 +58,7 @@ Cost columns give **lean-scaffold → full-CLI-agent** range using §2 per-task 
 | 3h | SWE-bench-Live | rolling (frozen Lite/Verified) | Contamination-free SWE-bench, multi-lang/OS | frozen Lite | ≈ 3a/3b | ≈ | No | Linux yes; Windows split no |
 | 3i | Commit0 | 54 libs | Build whole libraries from scratch | low-test-count libs | likely $100s–$1000s (unbounded per-task) | — | No | Yes but per-task scope huge |
 | 3j | AgentBench | 8 envs (~13k generations) | General LLM-as-agent | Dev split (~4k gens) | ~$40–60 | ~$30 | No | Poor — heavy Docker infra (16GB-RAM workers, Freebase DB). Avoid |
+| 3k | Harness-Bench (added post-survey, see §11) | 106 | **Harness effects** across models; 8 domains, oracle+LLM-judge verified | per-task manifests; no established mechanism | ~$8–22 (token-type ambiguous; + hidden sonnet-4.6 judge cost) | not discussed by paper | Tokens+turns only, no $ | No adapter — 6 built-in harnesses, pi not among them |
 
 **Reading the ranges:** the spread within a row is harness efficiency (the thing being competed on); the spread between rows 3a–3c is mostly **task count** (500 vs 300 vs 89) — per-task cost is similar. Terminal-Bench ≈ 0.3× SWE-bench Lite ≈ 0.18× SWE-bench Verified.
 
@@ -162,3 +163,34 @@ OpenRouter's rankings page shows only the top ~20 models overall; after excludin
 3. **Natural allowlist criterion** if multi-model: "open-weights models in OpenRouter's weekly top 20" — the 8 verified models. Non-arbitrary, re-derivable each season, and guarantees well-supported endpoints with working caching.
 4. **Rules requirement:** explicitly ban `:free` variants (`tencent/hy3:free` was #1 overall at 8.98T weekly tokens) — they zero out the cost metric and break the competition.
 5. **No coding-specific ranking exists** on OpenRouter (only per-language usage charts), so overall-weekly is the best available popularity signal.
+
+## 11. Post-survey addendum: Harness-Bench (arXiv 2605.27922)
+
+Added 2026-07-16. Missed by the original survey for a good reason — submitted 2026-05-27 (Qihoo360), ~7 weeks old at time of writing. It is the most *thematically* relevant benchmark to this competition in existence: 106 sandboxed offline oracle-checkable tasks across 8 domains, evaluating six configurable harnesses (OpenClaw, ZeroClaw, Hermes, Moltis, NullClaw, NanoBot; Codex reported separately as model-bound) across 8 API models — including `z-ai/glm-5.1` and `deepseek/deepseek-v4-flash` — over 5,194 trajectories. Code/tasks public: github.com/Qihoo360/harness-bench. Its headline finding is this competition's founding premise as a research result: capability varies so much by model-harness pairing that results should be reported at the model-harness configuration level.
+
+### 11.1 Cost to run (estimated — paper reports no dollars anywhere)
+
+Efficiency is reported only as "Tok.(K)" and turns per task, aggregated by harness (Table 2, avg over 106 tasks × 8 models). GLM 5.2 cost estimate assumes ~90/10 input/output split at $0.93/$3.00 per M, no cache:
+
+| Harness | Avg tokens/task | Turns | Est. $/task | Est. full run (106) |
+|---|---|---|---|---|
+| NanoBot | 68.7K | 7.3 | ~$0.08 | **~$8** |
+| OpenClaw | 82.1K | 5.0 | ~$0.10 | ~$10 |
+| Codex | 86.1K | 5.0 | ~$0.10 | ~$11 |
+| ZeroClaw | 133.2K | 8.6 | ~$0.16 | ~$17 |
+| Moltis | 134.9K | 8.0 | ~$0.16 | ~$17 |
+| Hermes | 139.7K | 22.6 | ~$0.17 | ~$18 |
+| NullClaw | 175.1K | 12.1 | ~$0.21 | **~$22** |
+
+Caveats: (1) the paper never defines the token metric — if "Tok.(K)" is unique-context rather than cumulative-billed input, real cost is a few times higher; (2) caching is never discussed and no per-model token breakdown exists; (3) verification includes a **claude-sonnet-4.6 LLM judge**, so every run bills un-estimated judge tokens on an Anthropic key — a hidden second cost and scoring dependency.
+
+### 11.2 Verdict: Terminal-Bench decision stands
+
+Cost was never the disqualifier ($8–22/run is cheap). The disqualifiers:
+
+1. **No pi seam** — six built-in harnesses, no adapter mechanism documented; the competition's whole premise needs pi plugged in.
+2. **LLM-judge scoring** — adds cost, noise, and a judge-gaming surface to a competition scored on dollars; TB's deterministic tests avoid all three.
+3. **Maturity** — 7 weeks old, unvetted task quality, no leaderboard ecosystem; TB has the Verified image fixes and known failure modes.
+4. **Modality drift** — 15 multimodal tasks conflict with the text-only allowlist; office/BI domains stray from a CLI harness's home turf.
+
+Retained roles: (a) **motivation citation** for the competition README — independent, quantified evidence that the harness layer is worth competing over; (b) **design intelligence** — its "execution-alignment failure" taxonomy (reasoning decoupling from tool feedback, workspace state, output contracts) maps exactly what participants' plugins should fix cheaply; (c) possible future secondary tier if someone writes a pi adapter.
