@@ -1,0 +1,14 @@
+[project]
+name = "arena-pi-agent"
+version = "0.1.0"
+description = "Harbor agent adapter for pi (WP2, spec §6.2) — the one Python component (D19)"
+requires-python = ">=3.12"
+# Pinned: harbor >=0.18 rewrote BaseInstalledAgent (no ExecInput / create_run_agent_commands).
+# 0.1.18 is the last line this adapter's interface targets; bumping = porting to the new API.
+dependencies = ["harbor==0.1.18"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0.0"]
+
+[tool.pytest.ini_options]
+addopts = "-q"

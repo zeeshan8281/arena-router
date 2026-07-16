@@ -1,0 +1,17 @@
+#!/bin/bash
+set -e
+
+# Node runtime (allowed: it's a runtime dep like python, not pi itself).
+apt-get update
+apt-get install -y curl
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.2/install.sh | bash
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+nvm install 22
+
+# D20: install pi from the vendored tarball ONLY. No npm-registry fetch of pi, so the
+# scored version can never drift from vendor/pi/. PiAgent.setup() uploaded + checksummed
+# it to /installed-agent/pi.tgz before this script runs.
+npm install -g /installed-agent/pi.tgz
+
+pi --help
