@@ -52,6 +52,9 @@ leaderboard (static JSON) → web UI
 | CI workflows, self-hosted runner + egress (WP6/7) | ⬜ pending |
 | Baseline probe → freeze gate numbers (WP11) | ⛔ blocked on an OpenRouter key |
 
+Full work-package-by-work-package progress (done / partial / blocked / left, mapped to
+the spec): **[`CHANGELOG.md`](./CHANGELOG.md)**.
+
 Local harness setup (harbor + pi, the version-pin gotcha, what's validated vs blocked):
 **[`competition/LOCAL_SETUP.md`](./competition/LOCAL_SETUP.md)**.
 
