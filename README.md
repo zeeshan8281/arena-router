@@ -42,18 +42,22 @@ leaderboard (static JSON) → web UI
 
 ## Build status
 
-| Piece | State |
-|---|---|
-| **`agent/`** — pi↔Harbor adapter (WP2) | ✅ built + tested; D20 install path validated live, key-free ([agent/README](./agent/README.md)) |
-| **`vendor/pi/`** — vendored pi (WP1) | ✅ `@earendil-works/pi-coding-agent@0.80.9`, checksum in `competition.toml` |
-| **`competition/anti-abuse/`** — tripwire + judge | ✅ built; judge needs re-pointing to Anthropic (D13) |
-| **`competition/scoring/`** — ledger/integrity/score | 🟡 prototype; live-validation blocked on an OpenRouter key |
-| Repo pivot (teardown v1, stand up `pipeline/`) | ⬜ pending |
-| CI workflows, self-hosted runner + egress (WP6/7) | ⬜ pending |
-| Baseline probe → freeze gate numbers (WP11) | ⛔ blocked on an OpenRouter key |
+All 12 work packages implemented to the limit of what's possible without keys/hardware;
+**59 node + 6 pytest tests green**. Summary:
 
-Full work-package-by-work-package progress (done / partial / blocked / left, mapped to
-the spec): **[`CHANGELOG.md`](./CHANGELOG.md)**.
+| Area | State |
+|---|---|
+| **`agent/`** — pi↔Harbor adapter (WP2) | ✅ built + tested; D20 vendored-install validated live, key-free |
+| **`vendor/pi/`** + `competition.toml` + `config.mjs` (WP1) | ✅ v1 quarantined to [`legacy/`](./legacy) |
+| **`competition/anti-abuse/`** — checks, tripwire, judge (WP4/5) | ✅ judge → Anthropic (D13); tripwire strings curated |
+| **`competition/scoring/`** + `runner.mjs` — ledger/integrity/budget/results/runner (WP3/6/8) | ✅ built + tested; live cost-ledger validation needs a key |
+| **`kit/`** — `arena` CLI + skill (WP10/12) | ✅ init/check/verify-pi/smoke/report; smoke spawn needs a key at runtime |
+| **`web/`** — static leaderboard + run views (WP9) | ✅ additive, reads `results/*.json` |
+| **`.github/workflows/`** + `infra/` (WP6/7) | 🟡 written; unrun (need the eval box + secrets) |
+| Baseline probe → freeze gate numbers (WP11) | ⛔ needs an OpenRouter key |
+
+Full work-package map (done / partial / blocked / left): **[`docs/IMPLEMENTED.md`](./docs/IMPLEMENTED.md)**
+· change-by-change log: **[`CHANGELOG.md`](./CHANGELOG.md)**.
 
 Local harness setup (harbor + pi, the version-pin gotcha, what's validated vs blocked):
 **[`competition/LOCAL_SETUP.md`](./competition/LOCAL_SETUP.md)**.
