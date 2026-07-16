@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "eligibility_bar": 61,
+  "baseline": { "pass": 61, "cost_usd": 9.8123, "run_id": "baseline-a1" },
+  "ranked": [
+    { "rank": 1, "participant": "octocat", "entry_name": "lean-context", "pass": 63, "cost_usd": 4.1200, "qualified": true, "run_id": "pr12-full-a1" },
+    { "rank": 2, "participant": "mona", "entry_name": "cache-warm", "pass": 61, "cost_usd": 5.9040, "qualified": true, "run_id": "pr9-full-a1" }
+  ],
+  "below_bar": [
+    { "participant": "hubot", "entry_name": "too-eager", "pass": 54, "qualified": false }
+  ]
+}

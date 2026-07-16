@@ -6,7 +6,7 @@ in [`docs/implementation-spec.md`](./docs/implementation-spec.md) §10. Legend:
 
 _Last updated: 2026-07-17._
 
-## Score: 12/12 work packages implemented as far as code allows; v1 quarantined into `legacy/`. What remains is pure execution, not construction — live runs (need an OpenRouter + Anthropic key) and eval-box provisioning (need hardware). All buildable logic is written + tested (54 node + 6 pytest).
+## Score: 12/12 work packages implemented as far as code allows; v1 quarantined into `legacy/`. What remains is pure execution, not construction — live runs (need an OpenRouter + Anthropic key) and eval-box provisioning (need hardware). All buildable logic is written + tested (59 node + 6 pytest).
 
 | WP | Package | Status | What's in the tree | What's left |
 |----|---------|--------|--------------------|-------------|
@@ -18,8 +18,8 @@ _Last updated: 2026-07-17._
 | 6 | CI workflows | 🟡 | `.github/workflows/{checks,smoke,full-run,leaderboard}.yml` per §5–§7 | can't run here; depends on `runner.mjs` (below) + secrets + self-hosted runner |
 | 7 | Eval box + egress | 🟡 | `infra/` (squid allowlist, internal-network compose, runner-setup runbook) | not provisioned; empirical 89-task allowlist derivation pending (log-only run) |
 | 8 | Results + leaderboard | ✅ | `scoring/results.mjs` (run-result assembly, leaderboard gen) + `harbor-results.mjs` (harbor→scoring parser, tested on real output) + `results/schema/run.schema.json` (conformance-tested); leaderboard CLI verified end-to-end | signing is a stub (off unless a signer is configured — see spec-feedback: git + gen-IDs may make it droppable) |
-| 9 | Web UI rewire | 🟡 | `web/` — zero-build static leaderboard + run-detail pages reading `results/*.json` (§7.3), pure render module tested (5 tests). Built additively, v1 `ui/` untouched | fold into the v1 SPA + carry OAuth during the pivot; v1 `ui/` teardown deferred |
-| 10 | Participant kit | 🟡 | `kit/arena.mjs` — `init`/`check`/`verify-pi`/`report` built + tested; `kit/skill/SKILL.md`, `submissions/_template/` | `arena smoke` is a stub (needs a key to wire the local Harbor run) |
+| 9 | Web UI rewire | ✅ | `ui/` v2 React SPA (leaderboard + run-detail reading `results/*.json`, §7.3) — v1 grader/receipts/ethers removed, OAuth kept, typechecks + builds; `web/*.html` static fallback + tested `render.mjs` | not visually verified here (no browser) |
+| 10 | Participant kit | ✅ | `kit/arena.mjs` + `kit/smoke.mjs` — `init`/`check`/`verify-pi`/`smoke`/`report` built + tested (injectable spawn, `--out` artifacts, `--tasks`, report deltas); `SKILL.md`, `_template/` | only the Harbor spawn needs a key at runtime |
 | 11 | Baseline probe + config freeze | ⛔ | probe path (`runner --type baseline`, cap-exempt) + sentinel guard built; freeze procedure documented (`docs/baseline-probe.md`) | the actual run needs an OpenRouter key — it fills `smoke.gate` + `full.eligibility_bar` (the `-1` sentinels) |
 | 12 | Improvement-loop skill | ✅ | `kit/skill/SKILL.md` — minimal one-pager (revised D22) | — |
 
@@ -34,10 +34,14 @@ needs a key; per-generation allowlist enforcement (transcript gen-IDs) is a mark
 - **Repo-pivot go-ahead** → WP1 teardown, WP9 web, and moving `competition/*.mjs` into `pipeline/`.
 
 ## Test status
-`node --test $(find competition kit web -name '*.test.mjs')` → 54 pass · `pytest agent/` → 6 pass.
+`node --test $(find competition kit web -name '*.test.mjs')` → 59 pass · `pytest agent/` → 6 pass.
 
 ## Commit trail (v2 branch)
-- WP6 runner + WP10 kit CLI (init/check/verify-pi/report)
+- WP9 v2 React SPA (ui/ rewired to results/ JSON)
+- real `arena smoke`/`report` + enriched tripwire + leaderboard schema
+- WP1 quarantine v1 → `legacy/`
+- WP9 static views + WP5 judge surfacing/cache + WP11 freeze doc
+- WP6 runner + WP10 kit CLI
 - `dce005e` WP5 judge → Anthropic (D13/D12)
 - `e15b399` pipeline core (config/budget/checks/results) + CI/infra/kit scaffolds
 - `c90e264` harbor result.json parser (harbor→scoring seam)

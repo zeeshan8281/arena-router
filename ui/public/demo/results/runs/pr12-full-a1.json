@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "run_id": "pr12-full-a1",
+  "run_type": "full",
+  "pr": 12,
+  "author": "octocat",
+  "entry_name": "lean-context",
+  "pi_version": "0.80.9",
+  "median_pass_count": 63,
+  "median_billed_usd": 4.12,
+  "trials": [
+    {
+      "pass_vector": {
+        "fix-git": true, "pypi-server": true, "kv-store-grpc": true, "write-compressor": false,
+        "nginx-request-logging": true, "configure-git-webserver": true, "sanitize-git-repo": true,
+        "password-recovery": true, "query-optimize": false, "db-wal-recovery": true, "regex-log": true
+      },
+      "pass_count": 63,
+      "billed_usd": 4.12,
+      "generation_ids": ["gen-demo-1", "gen-demo-2"]
+    }
+  ],
+  "validity": { "byok_zero": true, "voided": false, "void_reason": null },
+  "anomaly_flags": []
+}
