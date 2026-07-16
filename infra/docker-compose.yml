@@ -59,9 +59,11 @@ services:
 
   # ------------------------------------------------------------------ runner
   runner:
-    # Self-hosted GitHub Actions runner. Any maintained runner image works;
-    # myoung34/github-runner is a common choice. Pin a digest in production.
-    image: myoung34/github-runner:latest
+    # Self-hosted GitHub Actions runner with the eval toolchain baked in
+    # (node 22, patched harbor 0.1.18 venv — see infra/runner/Dockerfile).
+    # Build from the repo root on the box, or pull and pin a pushed digest:
+    #   docker build -f infra/runner/Dockerfile -t arena-eval-runner:v1 .
+    image: arena-eval-runner:v1
     container_name: arena-gh-runner
     restart: unless-stopped
     environment:
@@ -94,6 +96,11 @@ services:
       # Never proxy on-box/loopback traffic (Docker socket peers, squid itself).
       NO_PROXY: "localhost,127.0.0.1,squid,::1"
       no_proxy: "localhost,127.0.0.1,squid,::1"
+      # Harbor's patched compose templates (infra/runner/compose-templates/)
+      # attach every task container to this external network and forward the
+      # proxy vars above into it — the "Harbor MUST attach them" note below is
+      # implemented there, not by harbor upstream.
+      HARBOR_TASK_NETWORK: arena-internal
     volumes:
       # Harbor (run by the workflow) needs the Docker API to create task
       # containers. Mounting the socket makes those containers siblings on this

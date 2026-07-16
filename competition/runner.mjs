@@ -186,7 +186,9 @@ function liveDeps({ mgmt, outRoot }) {
     runTrial: (key, { tasks, model, submission, trialIndex }) => {
       const outDir = join(outRoot, `trial-${trialIndex}`);
       const args = harborArgs({ dataset: loadConfig().benchmark.dataset, tasks, submission, model, outDir, concurrency: loadConfig().benchmark.concurrency });
-      const env = { ...process.env, OPENROUTER_API_KEY: key, PI_VENDOR_TARBALL: join(REPO_ROOT, "vendor/pi/pi.tgz"), PI_VENDOR_SHA256: loadConfig().pi.sha256, PI_SUBMISSION_DIR: submission || "" };
+      // PYTHONPATH must include agent/ or harbor cannot resolve --agent-import-path pi_agent:PiAgent.
+      const pythonPath = [join(REPO_ROOT, "agent"), process.env.PYTHONPATH].filter(Boolean).join(":");
+      const env = { ...process.env, PYTHONPATH: pythonPath, OPENROUTER_API_KEY: key, PI_VENDOR_TARBALL: join(REPO_ROOT, "vendor/pi/pi.tgz"), PI_VENDOR_SHA256: loadConfig().pi.sha256, PI_SUBMISSION_DIR: submission || "" };
       const r = spawnSync("harbor", args, { env, encoding: "utf8", stdio: ["ignore", "inherit", "inherit"] });
       if (r.status !== 0) throw new Error(`harbor exited ${r.status}`);
       // harbor writes <outDir>/<run>/result.json — find the newest

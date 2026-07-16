@@ -58,7 +58,9 @@ function harborSpawn(root, config, model, submission) {
     const trialOut = join(outDir, `trial-${trialIndex}-harbor`);
     const args = ["run", "-d", config.benchmark.dataset, "--agent-import-path", "pi_agent:PiAgent", "-m", model, "-n", String(config.benchmark.concurrency), "-o", trialOut];
     for (const t of tasks) args.push("-t", t);
-    const env = { ...process.env, OPENROUTER_API_KEY: key, PI_VENDOR_TARBALL: join(root, "vendor/pi/pi.tgz"), PI_VENDOR_SHA256: config.pi.sha256, PI_SUBMISSION_DIR: submission || "" };
+    // PYTHONPATH must include agent/ or harbor cannot resolve --agent-import-path pi_agent:PiAgent.
+    const pythonPath = [join(root, "agent"), process.env.PYTHONPATH].filter(Boolean).join(":");
+    const env = { ...process.env, PYTHONPATH: pythonPath, OPENROUTER_API_KEY: key, PI_VENDOR_TARBALL: join(root, "vendor/pi/pi.tgz"), PI_VENDOR_SHA256: config.pi.sha256, PI_SUBMISSION_DIR: submission || "" };
     const r = spawnSync("harbor", args, { env, stdio: ["ignore", "inherit", "inherit"] });
     if (r.status !== 0) throw new Error(`harbor exited ${r.status}`);
     const sub = readdirSync(trialOut).map((d) => join(trialOut, d)).sort();

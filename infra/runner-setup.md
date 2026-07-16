@@ -35,6 +35,33 @@ deliberately unnecessary under this topology.
 The runner and squid come up together via `docker compose` (see
 `docker-compose.yml`). It is registered **to the repo**, not the org.
 
+### 3a. Runner image (build first)
+
+The runner runs `arena-eval-runner` (see `infra/runner/Dockerfile`):
+`myoung34/github-runner` plus node 22 and a python 3.12 venv holding
+**harbor 0.1.18 with two build-time patches** applied fail-closed by
+`infra/runner/patch-harbor.py`:
+
+1. **`upload_dir` docker-cp fix** — unpatched, an agent that pre-creates
+   `/tests` sends verifier files to `/tests/tests/…` and every task fails.
+2. **Compose-template swap** — harbor's task-container compose templates are
+   replaced with `infra/runner/compose-templates/*`, which attach every task
+   container to the external `arena-internal` network and forward
+   `HTTP(S)_PROXY`/`NO_PROXY` from the harbor process env. This is what
+   implements the "Harbor MUST attach task containers to `internal`" invariant
+   (§6.4) — harbor upstream has no flag for it.
+
+Build on the box from the repo root, then reference the tag in
+`docker-compose.yml`:
+
+```bash
+docker build -f infra/runner/Dockerfile -t arena-eval-runner:v1 .
+```
+
+`patch-harbor.py` sha256-verifies the pristine harbor files before touching
+them, so a harbor version bump fails the image build instead of silently
+running unpatched.
+
 - **Label:** `eval` (only). `smoke.yml` and `full-run.yml` target
   `runs-on: [self-hosted, eval]`; **no other workflow may land here.** The
   static/judge `checks.yml` and `leaderboard.yml` run on GitHub-hosted runners
@@ -63,43 +90,33 @@ host Docker daemon's image store on NVMe IS the persistent cache — once warm,
 Harbor's task-container starts are near-instant (§6.3). Warm it once at
 provisioning (and again whenever `competition.toml`'s `image_tag` bumps).
 
-- **Images:** `xiangyangli/<task>:20260204` — one per task, tag pinned to the TB
-  2.0 Verified / 2.1 set (`competition.toml`: `dataset =
-  "terminal-bench/terminal-bench-2"`, `image_tag = "20260204"`).
-- **Task list source:** the 89 task names come from the **terminal-bench-2
-  registry** (the dataset manifest), NOT a list hardcoded here — pulling the
-  list from the registry keeps it in lockstep with the pinned dataset.
+- **Image source of truth:** each task's `docker_image` pin in its `task.toml`
+  at the git commit the **harbor registry** pins for `terminal-bench@2.0` —
+  that is exactly what Harbor pulls at run time. As of registry commit
+  `69671fba` these are `alexgshaw/<task>:20251031` for all 89 tasks.
+  (`competition.toml`'s `image_tag = "20260204"` / `xiangyangli` names a
+  different image set that harbor's default registry does NOT use; switching to
+  it requires a registry/task.toml override that isn't built — reconcile before
+  freeze, see the OPEN note below.)
+- **Task list source:** the 89 task names come from the harbor registry
+  manifest, NOT a list hardcoded here; the script cross-checks them against
+  `competition/anti-abuse/task-ids.txt` and fails on any diff.
 
-Pre-pull loop (`infra/prepull-images.sh` — create alongside this doc):
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-IMAGE_TAG="${IMAGE_TAG:-20260204}"        # keep in sync with competition.toml
-IMAGE_REPO="xiangyangli"
-
-# Derive the 89 task names from the terminal-bench-2 registry rather than
-# hardcoding. Adjust the extraction to the registry's actual manifest shape;
-# the CONTRACT is: emit exactly the 89 Verified task slugs, one per line.
-tasks="$(tb tasks list --dataset terminal-bench/terminal-bench-2 --names-only)"
-
-count=0
-while IFS= read -r task; do
-  [ -z "$task" ] && continue
-  img="${IMAGE_REPO}/${task}:${IMAGE_TAG}"
-  echo "==> pulling ${img}"
-  docker pull "$img"
-  count=$((count + 1))
-done <<< "$tasks"
-
-echo "warmed ${count} images (expected 89)"
-[ "$count" -eq 89 ] || { echo "WARNING: expected 89, got ${count}"; exit 1; }
-```
+Pre-pull: run `infra/prepull-images.sh` (in this directory). It derives the 89
+`task.toml`-pinned image refs live from the registry and pulls each one.
 
 The loop is idempotent — re-running only pulls changed layers. Run it after
-first provisioning and after any `image_tag` bump. The cache survives across
-runs because it lives in the host daemon, not in ephemeral runner work dirs.
+first provisioning and after any dataset/registry bump. The cache survives
+across runs because it lives in the host daemon, not in ephemeral runner work
+dirs.
+
+> **OPEN (pre-freeze):** `competition.toml`'s `image_tag = "20260204"`
+> (`xiangyangli/<task>`, the Verified/2.1 set) vs the registry's
+> `alexgshaw/<task>:20251031` pins. Both exist on Docker Hub, but harbor 0.1.18
+> resolves images from the registry-pinned `task.toml`s, so today the
+> `alexgshaw` set is what actually runs. Either point the runner at a forked
+> registry/task set that pins `xiangyangli/<task>:20260204`, or fix
+> `competition.toml` to record reality.
 
 **Node runtime in task images (SEC M7).** `agent/install-pi.sh.j2` installs a
 Node runtime at task-setup time by fetching nvm from `raw.githubusercontent.com`

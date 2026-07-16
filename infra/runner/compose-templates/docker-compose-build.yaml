@@ -1,0 +1,33 @@
+# PATCHED harbor 0.1.18 template (arena eval box — see infra/runner/patch-harbor.py).
+# Deltas vs pristine: task container joins the external `arena-internal` network
+# (no route out; squid is the only reachable off-box peer) and receives the
+# standard proxy vars from the harbor process env (SEC C2c / §6.4). Everything
+# else is byte-identical to upstream.
+services:
+  main:
+    build:
+      context: ${CONTEXT_DIR}
+    image: ${MAIN_IMAGE_NAME}
+    command: [ "sh", "-c", "sleep infinity" ]
+    environment:
+      - TEST_DIR=${TEST_DIR}
+      - HTTP_PROXY=${HTTP_PROXY-http://squid:3128}
+      - HTTPS_PROXY=${HTTPS_PROXY-http://squid:3128}
+      - http_proxy=${http_proxy-http://squid:3128}
+      - https_proxy=${https_proxy-http://squid:3128}
+      - NO_PROXY=${NO_PROXY-localhost,127.0.0.1,squid,::1}
+      - no_proxy=${no_proxy-localhost,127.0.0.1,squid,::1}
+    volumes:
+      - ${HOST_VERIFIER_LOGS_PATH}:${ENV_VERIFIER_LOGS_PATH}
+      - ${HOST_AGENT_LOGS_PATH}:${ENV_AGENT_LOGS_PATH}
+    networks:
+      - task
+    deploy:
+      resources:
+        limits:
+          cpus: ${CPUS}
+          memory: ${MEMORY}
+networks:
+  task:
+    name: ${HARBOR_TASK_NETWORK:-arena-internal}
+    external: true
