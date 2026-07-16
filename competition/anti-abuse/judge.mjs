@@ -6,7 +6,8 @@
 //   git diff origin/main...HEAD | node competition/anti-abuse/judge.mjs [--json]
 //   env: ANTHROPIC_API_KEY (required) · JUDGE_MODEL (default claude-sonnet-4-6)
 // D13: Anthropic Claude Sonnet 4.6, deliberately OFF the competition model pool.
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -63,6 +64,40 @@ export async function callJudge(diff, { apiKey, model = "claude-sonnet-4-6", fet
   const text = Array.isArray(data?.content) ? data.content.map((b) => b.text || "").join("") : "";
   return parseVerdict(text);
 }
+
+// ── surfacing + verdict cache (spec §5.3) ──
+
+/** Short SHA of the diff — keys the verdict cache so an identical diff isn't re-rolled
+ *  (flapping guard, §5.3). */
+export const verdictSha = (diff) => createHash("sha256").update(diff).digest("hex").slice(0, 16);
+
+/** Cached verdict for a diff SHA, or null. */
+export function cachedVerdict(cacheDir, sha) {
+  const p = join(cacheDir, `${sha}.json`);
+  return existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : null;
+}
+export function cacheVerdict(cacheDir, sha, verdict) {
+  mkdirSync(cacheDir, { recursive: true });
+  writeFileSync(join(cacheDir, `${sha}.json`), JSON.stringify(verdict));
+  return verdict;
+}
+
+/** Sticky PR-comment body (§5.3): a hidden marker lets CI find-and-update one comment. */
+export const STICKY_MARKER = "<!-- arena-judge -->";
+export function stickyCommentBody(v) {
+  const mark = { clean: "✅", suspicious: "⚠️", violation: "⛔" }[v.verdict] || "❓";
+  const out = [STICKY_MARKER, `${mark} **Harness judge: \`${v.verdict}\`** (confidence ${v.confidence})`];
+  if (v.reasons?.length) out.push("", ...v.reasons.map((r) => `- ${r}`));
+  if (isBlocked(v.verdict)) out.push("", "_Blocked pending review — a maintainer can apply `judge-override` to appeal (spec §5.3)._");
+  return out.join("\n");
+}
+
+/** One appended line for results/judge-log.jsonl (§5.3, admin audit). */
+export const judgeLogLine = ({ pr, sha, verdict, at, overriddenBy = null }) =>
+  JSON.stringify({ pr, sha, verdict: verdict.verdict, confidence: verdict.confidence, reasons: verdict.reasons ?? [], overridden_by: overriddenBy, at: at ?? null });
+
+/** PR label for the verdict (§5.3). */
+export const judgeLabel = (v) => `judge:${v.verdict}`;
 
 // ── CLI ──
 if (import.meta.url === `file://${process.argv[1]}`) {

@@ -1,0 +1,27 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>AutoRouter Arena — leaderboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  body { font: 15px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; max-width: 820px; margin: 3rem auto; padding: 0 1rem; color: #111; }
+  h1 { font-size: 1.4rem; } h3 { margin-top: 2rem; color: #555; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #eee; }
+  th { color: #888; font-weight: 600; }
+  .cost { font-variant-numeric: tabular-nums; }
+  .baseline { color: #666; background: #f6f6f6; padding: 8px 12px; border-radius: 6px; }
+  .empty { color: #999; } a { color: #06c; }
+</style>
+<h1>AutoRouter Arena — harness efficiency</h1>
+<p>Lowest billed OpenRouter dollars among harnesses that match the baseline pass count. <a href="https://github.com/zeeshan8281/arena-router/blob/v2/README.md">about</a></p>
+<div id="app" class="empty">loading…</div>
+<script type="module">
+  import { renderLeaderboard } from "./render.mjs";
+  const src = new URLSearchParams(location.search).get("src") || "../results/leaderboard.json";
+  try {
+    const lb = await (await fetch(src)).json();
+    document.getElementById("app").innerHTML = renderLeaderboard(lb);
+  } catch (e) {
+    document.getElementById("app").textContent = "No leaderboard yet (run the pipeline first).";
+  }
+</script>

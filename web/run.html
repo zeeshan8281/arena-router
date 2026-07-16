@@ -1,0 +1,30 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>AutoRouter Arena — run detail</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  body { font: 15px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; max-width: 820px; margin: 3rem auto; padding: 0 1rem; color: #111; }
+  h2 small { color: #999; font-weight: 400; }
+  .grid { display: flex; flex-wrap: wrap; gap: 4px; margin: 1rem 0; }
+  .cell { font-size: 11px; padding: 3px 6px; border-radius: 4px; }
+  .cell.pass { background: #e5f6e5; color: #1a6b1a; }
+  .cell.fail { background: #fbe6e6; color: #a11; }
+  .badge { font-size: 12px; padding: 2px 8px; border-radius: 10px; }
+  .badge.ok { background: #e5f6e5; color: #1a6b1a; } .badge.void { background: #fbe6e6; color: #a11; }
+  .anom { color: #b70; } .empty { color: #999; } a { color: #06c; }
+</style>
+<p><a href="./leaderboard.html">← leaderboard</a></p>
+<div id="app" class="empty">loading…</div>
+<script type="module">
+  import { renderRun } from "./render.mjs";
+  const p = new URLSearchParams(location.search);
+  const id = p.get("id");
+  const src = p.get("src") || (id ? `../results/runs/${id}.json` : null);
+  try {
+    if (!src) throw new Error("no run id");
+    const run = await (await fetch(src)).json();
+    document.getElementById("app").innerHTML = renderRun(run);
+  } catch (e) {
+    document.getElementById("app").textContent = "Run not found — pass ?id=<run-id>.";
+  }
+</script>

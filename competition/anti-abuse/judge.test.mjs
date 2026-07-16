@@ -1,7 +1,34 @@
 // Offline checks for judge verdict parsing. Run: node --test competition/anti-abuse/judge.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseVerdict, buildPrompt, RULE, callJudge, isBlocked } from "./judge.mjs";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { parseVerdict, buildPrompt, RULE, callJudge, isBlocked, verdictSha, cachedVerdict, cacheVerdict, stickyCommentBody, judgeLogLine, judgeLabel, STICKY_MARKER } from "./judge.mjs";
+
+test("verdict SHA cache round-trips and is diff-keyed", () => {
+  const dir = mkdtempSync(join(tmpdir(), "judge-cache-"));
+  const sha = verdictSha("+ some diff");
+  assert.equal(sha.length, 16);
+  assert.equal(cachedVerdict(dir, sha), null);
+  cacheVerdict(dir, sha, { verdict: "clean", confidence: 0.9 });
+  assert.equal(cachedVerdict(dir, sha).verdict, "clean");
+  assert.notEqual(verdictSha("+ other diff"), sha);
+});
+
+test("surfacing: sticky comment, log line, label", () => {
+  const v = { verdict: "violation", confidence: 0.8, reasons: ["hardcodes fix-git"] };
+  const body = stickyCommentBody(v);
+  assert.match(body, new RegExp(STICKY_MARKER));
+  assert.match(body, /violation/);
+  assert.match(body, /judge-override/); // appeal note on blocked verdicts
+  assert.equal(judgeLabel(v), "judge:violation");
+  const line = JSON.parse(judgeLogLine({ pr: 42, sha: "abc", verdict: v, at: "t" }));
+  assert.equal(line.pr, 42);
+  assert.equal(line.verdict, "violation");
+  // clean verdict → no appeal note
+  assert.doesNotMatch(stickyCommentBody({ verdict: "clean", confidence: 1, reasons: [] }), /judge-override/);
+});
 
 test("D12: only clean proceeds", () => {
   assert.equal(isBlocked("clean"), false);
