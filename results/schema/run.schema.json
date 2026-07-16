@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/zeeshan8281/arena-router/results/schema/run.schema.json",
+  "title": "Arena run result",
+  "description": "Per-run results file (spec §7.1). Emitted by competition/scoring/results.mjs buildRunResult().",
+  "type": "object",
+  "required": ["schema_version", "run_id", "run_type", "author", "trials", "median_pass_count", "median_billed_usd", "validity"],
+  "additionalProperties": true,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "run_id": { "type": "string", "description": "pr<n>-<smoke|full|baseline>-a<attempt>" },
+    "run_type": { "enum": ["smoke", "full", "baseline"] },
+    "pr": { "type": ["integer", "string", "null"] },
+    "author": { "type": "string" },
+    "entry_name": { "type": ["string", "null"] },
+    "submission_sha": { "type": ["string", "null"] },
+    "pi_version": { "type": ["string", "null"] },
+    "config_sha": { "type": ["string", "null"] },
+    "started_at": { "type": ["string", "null"] },
+    "finished_at": { "type": ["string", "null"] },
+    "trials": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["pass_count", "billed_usd"],
+        "properties": {
+          "pass_vector": { "type": "object", "additionalProperties": { "type": "boolean" } },
+          "pass_count": { "type": "integer", "minimum": 0 },
+          "n_errors": { "type": "integer", "minimum": 0 },
+          "billed_usd": { "type": "number", "minimum": 0, "description": "OpenRouter ledger delta for this trial" },
+          "generation_ids": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "median_pass_count": { "type": "number", "minimum": 0 },
+    "median_billed_usd": { "type": "number", "minimum": 0 },
+    "validity": {
+      "type": "object",
+      "properties": {
+        "byok_zero": { "type": "boolean" },
+        "voided": { "type": "boolean" },
+        "void_reason": {}
+      }
+    },
+    "anomaly_flags": { "type": "array" },
+    "smoke_gate": { "type": "object" }
+  }
+}

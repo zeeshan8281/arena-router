@@ -2,8 +2,18 @@
 //   node --test competition/scoring/pipeline.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { monthlySpend, budgetCheck } from "./budget.mjs";
 import { buildRunResult, generateLeaderboard } from "./results.mjs";
+
+test("buildRunResult output has every schema-required top-level key", () => {
+  const schema = JSON.parse(readFileSync(new URL("../../results/schema/run.schema.json", import.meta.url)));
+  const r = buildRunResult({
+    runId: "pr1-full-a1", runType: "full", pr: 1, author: "alice",
+    startedAt: "t0", finishedAt: "t1", trials: [{ pass_count: 5, billed_usd: 2.0 }],
+  });
+  for (const k of schema.required) assert.ok(k in r, `missing required key: ${k}`);
+});
 
 const RUNS = [
   { author: "alice", started_at: "2026-07-02T10:00:00", median_billed_usd: 4.0, validity: { voided: false } },
