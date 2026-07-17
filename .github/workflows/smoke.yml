@@ -151,7 +151,12 @@ jobs:
 
   smoke:
     needs: gate
-    runs-on: [self-hosted, eval]     # dedicated eval box (spec §6.3/D9)
+    # Where eval jobs land is a repo variable so the flip to the eval box is a
+    # settings change, not a commit. Unset/default → GitHub-hosted (interim,
+    # maintainer-approved via the eval-runner environment protection rule; NO
+    # egress lockdown — see .github/actions/setup-eval). When the box registers,
+    # set EVAL_RUNS_ON to ["self-hosted","eval"] (spec §6.3/D9).
+    runs-on: ${{ fromJSON(vars.EVAL_RUNS_ON || '"ubuntu-latest"') }}
     environment: eval-runner          # OPENROUTER_MANAGEMENT_KEY lives here (§3)
     outputs:
       passed: ${{ steps.smoke.outputs.passed }}
@@ -182,6 +187,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+
+      # Hosted-mode toolchain (python 3.12 + patched harbor + task network);
+      # no-op on the eval box, where the runner image bakes all of this in.
+      - uses: ./.github/actions/setup-eval
 
       # Mint capped key → spawn harbor → pull ledger → score → emit results JSON
       # (spec §6.1). runner.mjs handles key lifecycle, validity assertions, and

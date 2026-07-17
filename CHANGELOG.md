@@ -29,9 +29,9 @@ cost deltas → integrity → results JSON. 5 orchestration tests (all seams moc
 needs a key; per-generation allowlist enforcement (transcript gen-IDs) is a marked follow-up.
 
 ## Blocked on you (not on code)
-- **OpenRouter management key** → unblocks WP3 live-validation, WP11 baseline probe, real runs.
-- **Anthropic API key** → live judge (WP5).
-- **Repo-pivot go-ahead** → WP1 teardown, WP9 web, and moving `competition/*.mjs` into `pipeline/`.
+- **OPENROUTER_MANAGEMENT_KEY + ANTHROPIC_API_KEY**: set in the `eval-runner` environment (2026-07-16). Next: add the required-reviewer rule on that environment, then run `scripts/verify-openrouter.mjs` (~$0.05) before any real dispatch.
+- **RESULTS_BOT_TOKEN** → pending; full-run.yml falls back to a workflow artifact until it lands.
+- **Eval box / runner registration token** → interim covered by the `EVAL_RUNS_ON` hosted-runner toggle (maintainer-approved runs only, no egress lockdown).
 
 ## Test status
 `node --test $(find competition kit web -name '*.test.mjs')` → 61 pass · `pytest agent/` → 6 pass.

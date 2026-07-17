@@ -1,0 +1,58 @@
+# setup-eval — prepare a runner to execute harbor eval runs.
+#
+# Dual-mode: on the self-hosted eval box these steps are all no-ops (the
+# arena-eval-runner image bakes in node/python/patched-harbor and the compose
+# stack provides arena-internal + squid). On GitHub-hosted runners (the interim
+# maintainer-only mode) this recreates the image's toolchain as job steps and
+# neutralizes the squid wiring — hosted runners have no proxy, so the patched
+# compose templates' `${VAR-default}` proxy defaults must be disabled by
+# setting the vars EXPLICITLY EMPTY (dash syntax: set-but-empty wins over the
+# default; unset would fail closed against a squid that doesn't exist).
+#
+# SECURITY NOTE (hosted mode): there is NO egress lockdown on GitHub-hosted
+# runners — task containers and the runner have open internet. This mode is
+# acceptable ONLY with the `eval-runner` environment protected by required
+# reviewers (maintainer approves every job that sees the secrets). Spend is
+# still bounded server-side by the per-run capped key regardless.
+name: setup-eval
+description: Toolchain + network prep for harbor eval runs (hosted or eval box)
+
+runs:
+  using: composite
+  steps:
+    - name: Free disk space (hosted runners only)
+      if: runner.environment == 'github-hosted'
+      shell: bash
+      run: |
+        # ~14 GB free stock; task images need more. Drop the big unused SDKs.
+        sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup
+        df -h / | tail -1
+
+    - name: Set up python 3.12 (hosted only — the box image bakes it in)
+      if: runner.environment == 'github-hosted'
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install + patch harbor 0.1.18 (hosted only)
+      if: runner.environment == 'github-hosted'
+      shell: bash
+      run: |
+        pip install --quiet "harbor==0.1.18"
+        # Same fail-closed patcher the box image runs at build time: sha256-gates
+        # the pristine files, applies the upload_dir fix + compose-template swap.
+        python infra/runner/patch-harbor.py
+
+    - name: Task network + proxy neutralization (hosted only)
+      if: runner.environment == 'github-hosted'
+      shell: bash
+      run: |
+        # The patched compose templates attach task containers to this external
+        # network. On the box it's internal-only (no route out); here it's a
+        # plain bridge — the egress lockdown does NOT exist in hosted mode.
+        docker network inspect arena-internal >/dev/null 2>&1 || docker network create arena-internal
+        # Explicit-empty proxy vars: templates use ${VAR-default} (dash), so
+        # set-but-empty disables the squid default. Unset would fail closed.
+        for v in HTTP_PROXY HTTPS_PROXY http_proxy https_proxy NO_PROXY no_proxy; do
+          echo "$v=" >> "$GITHUB_ENV"
+        done

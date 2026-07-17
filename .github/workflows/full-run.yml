@@ -30,8 +30,21 @@ permissions:
 
 jobs:
   full:
-    runs-on: [self-hosted, eval]     # dedicated eval box (spec §6.3/D9)
+    # Repo-variable toggle, same as smoke.yml: default GitHub-hosted (interim,
+    # maintainer-approved, no egress lockdown); set EVAL_RUNS_ON to
+    # ["self-hosted","eval"] when the box registers (spec §6.3/D9).
+    runs-on: ${{ fromJSON(vars.EVAL_RUNS_ON || '"ubuntu-latest"') }}
     environment: eval-runner          # OPENROUTER_MANAGEMENT_KEY + RESULTS_BOT_TOKEN (§3)
+    env:
+      # Job-level so the commit step's `if:` can see it (the secrets context is
+      # not available in step-level if). Empty until the PAT is set → the commit
+      # step skips and the artifact upload below preserves the run output.
+      RESULTS_BOT_TOKEN: ${{ secrets.RESULTS_BOT_TOKEN }}
+    outputs:
+      # Whether the commit step actually ran (it skips while RESULTS_BOT_TOKEN
+      # is unset) — gates the leaderboard dispatch: no new commit on main means
+      # nothing to regenerate, and leaderboard.yml needs the same missing PAT.
+      committed: ${{ steps.commit.outcome == 'success' }}
     steps:
       - name: Checkout PR merge ref (gated behind judge + smoke — spec §3)
         uses: actions/checkout@v4
@@ -42,6 +55,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+
+      # Hosted-mode toolchain (python 3.12 + patched harbor + task network);
+      # no-op on the eval box, where the runner image bakes all of this in.
+      - uses: ./.github/actions/setup-eval
 
       # Mint $10 key → harbor 1×89 → ledger pull → validity assertions →
       # results/runs/<run-id>.json (spec §6.1). runner.mjs deletes the key and
@@ -59,9 +76,14 @@ jobs:
       # Commit the per-run results JSON to main via the fine-grained bot PAT
       # (contents:write on this repo only — spec §3/D15). Not github.token so the
       # push is attributed to the bot and can target the default branch.
+      #
+      # INTERIM: while RESULTS_BOT_TOKEN is not yet set in the eval-runner
+      # environment, skip the push and upload the results as a workflow artifact
+      # instead (step below) so a run's output is never silently lost. Once the
+      # PAT lands, this step takes over and the artifact becomes a byproduct.
       - name: Commit results/ to main
-        env:
-          RESULTS_BOT_TOKEN: ${{ secrets.RESULTS_BOT_TOKEN }}
+        id: commit
+        if: env.RESULTS_BOT_TOKEN != ''
         run: |
           git config user.name  "arena-results-bot"
           git config user.email "arena-results-bot@users.noreply.github.com"
@@ -80,10 +102,22 @@ jobs:
             git push "https://x-access-token:${RESULTS_BOT_TOKEN}@github.com/${{ github.repository }}.git" HEAD:main
           fi
 
+      # Always preserve the run output as an artifact (90-day retention). This
+      # is the ONLY sink while RESULTS_BOT_TOKEN is unset; afterwards it's a
+      # convenience copy. always() so a failed/voided run's JSON survives too.
+      - name: Upload results artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: results-pr${{ github.event.inputs.pr }}
+          path: results/runs/
+          if-no-files-found: warn
+
   # Regenerate + commit the leaderboard after the run lands (spec §6.1.9/§7.2).
   trigger-leaderboard:
     needs: full
-    if: always() && needs.full.result == 'success'
+    # Only when a results commit actually landed on main (i.e. the PAT is set).
+    if: always() && needs.full.result == 'success' && needs.full.outputs.committed == 'true'
     runs-on: ubuntu-latest
     permissions:
       actions: write

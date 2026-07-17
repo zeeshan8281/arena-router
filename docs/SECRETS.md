@@ -16,6 +16,38 @@ Add at: **repo → Settings → Environments → `eval-runner` → Add secret** 
 > The account behind `OPENROUTER_MANAGEMENT_KEY` needs a **credit balance** — the probe
 > and real runs spend actual dollars through the keys it mints.
 
+**`RESULTS_BOT_TOKEN` may lag the others.** full-run.yml degrades gracefully while
+it is unset: the commit-to-main step skips, the run JSON is preserved as a
+workflow artifact (`results-pr<N>`, 90-day retention), and the leaderboard
+dispatch is suppressed. Set the PAT later and the normal commit path takes over.
+
+**Verify caps before any real run.** Once `OPENROUTER_MANAGEMENT_KEY` is set
+locally (`.env`), run `node --env-file=.env scripts/verify-openrouter.mjs` — it
+burns down the VERIFY markers in `scoring/openrouter.mjs` against the live API
+and proves the per-key credit cap is enforced server-side. Worst-case spend
+≈ $0.05. Do not dispatch smoke/full/baseline until it passes.
+
+## Interim: GitHub-hosted eval runs (`EVAL_RUNS_ON` repo variable)
+
+Until the eval box registers, smoke.yml / full-run.yml default to
+`ubuntu-latest`. This mode has **no egress lockdown** (no squid, no internal-only
+network), so it is only acceptable maintainer-gated:
+
+1. **Protect the `eval-runner` environment**: repo → Settings → Environments →
+   `eval-runner` → **Required reviewers** → add the maintainer. Every job that
+   can see the secrets then waits for an explicit approval click.
+   *Side effect:* checks.yml's `judge` job uses the same environment for
+   `ANTHROPIC_API_KEY`, so each PR push's judge also waits for approval. That
+   is correct for the maintainer-only interim; when opening to the public,
+   either lift the rule (box mode) or move the judge key to its own
+   unprotected environment.
+2. Spend stays bounded regardless: every run mints a key hard-capped at
+   $1.50 (smoke) / $10 (full/baseline), enforced server-side by OpenRouter.
+
+When the box is up, set the repo **variable** `EVAL_RUNS_ON` to
+`["self-hosted","eval"]` (Settings → Secrets and variables → Actions →
+Variables) — no commit needed to flip.
+
 ## Local `.env` (baseline probe + local smoke)
 `cp .env.example .env`, fill in, then use Node's loader:
 ```bash
